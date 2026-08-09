@@ -68,8 +68,8 @@ The expected workflow is:
     - [x] `User.java` Entity - done
     - [x] `Task.java` Entity - done
     - [x] `TimeSession.java` Entity - done
-    - [ ] `Subscription.java` Entity
-    - [ ] JPA Repositories
+    - [x] `Subscription.java` Entity - done
+    - [x] JPA Repositories - done
     - [ ] Service & Controller Layers
 13. Unit Testing
 14. Integration Testing

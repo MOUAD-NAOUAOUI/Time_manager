@@ -70,7 +70,11 @@ The expected workflow is:
     - [x] `TimeSession.java` Entity - done
     - [x] `Subscription.java` Entity - done
     - [x] JPA Repositories - done
-    - [ ] Service & Controller Layers
+    - [x] Service & Controller Layers (In Progress)
+        - [x] Auth DTOs (`RegisterRequest`, `LoginRequest`, `AuthResponse`) - done
+        - [x] `UserService.java` (User Registration & Password Hashing) - done
+        - [x] `AuthController.java` (`POST /auth/register`) - done
+        - [x] `SecurityConfig.java` (Stateless Security Rules & Public Auth Paths) - done
 13. Unit Testing
 14. Integration Testing
 15. End-to-End Testing

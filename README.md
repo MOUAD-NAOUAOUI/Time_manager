@@ -32,6 +32,22 @@ Always think like a software company, not like a university project.
 
 ---
 
+# DEVELOPMENT STARTUP
+
+To start the full local development environment, run the following script from the project root:
+
+```
+start-dev.ps1
+```
+
+This script will:
+1. Start Docker containers (PostgreSQL on port 5432 + Redis on port 6379) via `docker compose up -d`
+2. Start the Spring Boot backend on port 8080 via `mvn spring-boot:run`
+
+> Maven must be installed and available on the system PATH before running this script.
+
+---
+
 # AI & DEVELOPER WORKING RULES
 
 - **Automatic Verification:** The AI must automatically check and verify any file after modifying, adding, or deleting content.

@@ -26,4 +26,12 @@ public class User {
 
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now();
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
 }

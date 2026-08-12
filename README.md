@@ -37,7 +37,7 @@ Always think like a software company, not like a university project.
 To start the full local development environment, run the following script from the project root:
 
 ```
-start-dev.ps1
+start-dev.ps1 (Created & Verified)
 ```
 
 This script will:
@@ -89,7 +89,7 @@ The expected workflow is:
     - [x] Service & Controller Layers (In Progress)
         - [x] Auth DTOs (`RegisterRequest`, `LoginRequest`, `AuthResponse`) - done
         - [x] `UserService.java` (User Registration & Password Hashing) - done
-        - [x] `AuthController.java` (`POST /auth/register`) - done
+        - [x] `AuthController.java` (`POST /auth/register`, `POST /auth/login`) - done
         - [x] `SecurityConfig.java` (Stateless Security Rules & Public Auth Paths) - done
 13. Unit Testing
 14. Integration Testing

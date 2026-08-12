@@ -1,0 +1,15 @@
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\entity\Subscription.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\repository\SubscriptionRepository.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\dto\AuthResponse.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\entity\TimeSession.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\CoreBackendApplication.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\dto\LoginRequest.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\entity\Task.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\repository\UserRepository.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\repository\TimeSessionRepository.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\dto\RegisterRequest.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\controller\AuthController.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\entity\User.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\repository\TaskRepository.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\service\UserService.java
+C:\Users\netwo\Documents\Time\core-backend\src\main\java\com\intelligenttime\corebackend\config\SecurityConfig.java

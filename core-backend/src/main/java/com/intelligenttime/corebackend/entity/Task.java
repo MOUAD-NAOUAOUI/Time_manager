@@ -1,11 +1,9 @@
 package com.intelligenttime.corebackend.entity;
 
 import jakarta.persistence.*;
-import lombok.Data;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
-@Data
 @Entity
 @Table(name = "tasks")
 
@@ -37,4 +35,28 @@ public class Task {
 
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now();
+
+    public UUID getId() { return id; }
+    public void setId(UUID id) { this.id = id; }
+
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
+
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+
+    public String getColor() { return color; }
+    public void setColor(String color) { this.color = color; }
+
+    public Integer getEstimatedMinutes() { return estimatedMinutes; }
+    public void setEstimatedMinutes(Integer estimatedMinutes) { this.estimatedMinutes = estimatedMinutes; }
+
+    public ZonedDateTime getDeadline() { return deadline; }
+    public void setDeadline(ZonedDateTime deadline) { this.deadline = deadline; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public ZonedDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(ZonedDateTime createdAt) { this.createdAt = createdAt; }
 }

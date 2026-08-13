@@ -1,6 +1,7 @@
 package com.intelligenttime.corebackend.service;
 
 import com.intelligenttime.corebackend.dto.RegisterRequest;
+import com.intelligenttime.corebackend.dto.UserProfileResponse;
 import com.intelligenttime.corebackend.entity.Subscription;
 import com.intelligenttime.corebackend.entity.User;
 import com.intelligenttime.corebackend.repository.SubscriptionRepository;
@@ -45,12 +46,23 @@ public class UserService {
 
     public User loginUser(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("Invalid email or passwordHash"));
+                .orElseThrow(() -> new RuntimeException("Invalid email or password"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new RuntimeException("Invalid email or password");
 
         }
         return user;
+    }
+
+    public UserProfileResponse getUserProfile(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Subscription subscription = subscriptionRepository.findByUser(user)
+                .orElse(null);
+        String plan = subscription != null ? subscription.getPlan() : "free";
+        String status = subscription != null ? subscription.getStatus() : "inactive";
+        return new UserProfileResponse(user.getId(), user.getEmail(),
+                user.getTimezone(), user.getCreatedAt(), plan, status);
     }
 }

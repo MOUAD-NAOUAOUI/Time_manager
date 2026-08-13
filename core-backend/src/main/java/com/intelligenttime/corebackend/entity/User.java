@@ -1,11 +1,9 @@
 package com.intelligenttime.corebackend.entity;
 
 import jakarta.persistence.*;
-import lombok.Data;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
-@Data
 @Entity
 @Table(name = "users")
 
@@ -27,11 +25,18 @@ public class User {
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now();
 
-    public String getPasswordHash() {
-        return passwordHash;
-    }
+    public UUID getId() { return id; }
+    public void setId(UUID id) { this.id = id; }
 
-    public void setPasswordHash(String passwordHash) {
-        this.passwordHash = passwordHash;
-    }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getPasswordHash() { return passwordHash; }
+    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
+
+    public String getTimezone() { return timezone; }
+    public void setTimezone(String timezone) { this.timezone = timezone; }
+
+    public ZonedDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(ZonedDateTime createdAt) { this.createdAt = createdAt; }
 }

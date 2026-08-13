@@ -1,11 +1,9 @@
 package com.intelligenttime.corebackend.entity;
 
 import jakarta.persistence.*;
-import lombok.Data;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
-@Data
 @Entity
 @Table(name = "subscriptions")
 
@@ -34,4 +32,24 @@ public class Subscription {
     @Column(name = "created_at", updatable = false, nullable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now();
 
+    public UUID getId() { return id; }
+    public void setId(UUID id) { this.id = id; }
+
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
+
+    public String getPlan() { return plan; }
+    public void setPlan(String plan) { this.plan = plan; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public ZonedDateTime getCurrentPeriodStart() { return currentPeriodStart; }
+    public void setCurrentPeriodStart(ZonedDateTime currentPeriodStart) { this.currentPeriodStart = currentPeriodStart; }
+
+    public ZonedDateTime getCurrentPeriodEnd() { return currentPeriodEnd; }
+    public void setCurrentPeriodEnd(ZonedDateTime currentPeriodEnd) { this.currentPeriodEnd = currentPeriodEnd; }
+
+    public ZonedDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(ZonedDateTime createdAt) { this.createdAt = createdAt; }
 }

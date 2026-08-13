@@ -48,12 +48,7 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- 5. Lombok: Eliminates Boilerplate Code-->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
+        <!-- 5. Lombok removed: incompatible with Java 25. All getters/setters are explicit. -->
            
         <!-- 6. Testing Framework-->
         <dependency>
@@ -65,30 +60,10 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
         <build>
             <plugins>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <configuration>
-                        <annotationProcessorPaths>
-                            <path>
-                                <groupId>org.projectlombok</groupId>
-                                <artifactId>lombok</artifactId>
-                                <version>${lombok.version}</version>
-                            </path>
-                        </annotationProcessorPaths>
-                    </configuration>
-                </plugin>
+
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
-                    <configuration>
-                        <excludes>
-                            <exclude>
-                                <groupId>org.projectlombok</groupId>
-                                <artifactId>lombok</artifactId>
-                            </exclude>
-                        </excludes>
-                    </configuration>
                 </plugin>
             </plugins>
         </build>

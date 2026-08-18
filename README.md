@@ -95,7 +95,12 @@ The expected workflow is:
         - [x] `TimeSessionController.java` (`POST /sessions`, `PUT /sessions/{id}/stop`) - done
         - [x] `AnalyticsController.java` (`GET /analytics/dashboard`) - done
         - [x] `SecurityConfig.java` (Stateless Security Rules & Public Dev Paths) - done
-13. Unit Testing
+        - [x] Frontend Next.js 16 (Landing Page, Login, Register, Dashboard, Tasks) - done
+13. Unit Testing - done
+    - [x] `UserServiceTest.java` (User registration & duplicate prevention unit tests) - done
+    - [x] `TaskServiceTest.java` (Task creation & user tasks retrieval unit tests) - done
+    - [x] `TimeSessionServiceTest.java` (Start & Stop time tracking session unit tests) - done
+    - [x] `AnalyticsServiceTest.java` (Dashboard analytics calculation unit tests) - done
 14. Integration Testing
 15. End-to-End Testing
 16. Performance Testing

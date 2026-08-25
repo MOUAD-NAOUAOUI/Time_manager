@@ -5,6 +5,7 @@ import com.intelligenttime.corebackend.dto.StartSessionRequest;
 import com.intelligenttime.corebackend.entity.Task;
 import com.intelligenttime.corebackend.entity.TimeSession;
 import com.intelligenttime.corebackend.entity.User;
+import com.intelligenttime.corebackend.exception.ResourceNotFoundException;
 import com.intelligenttime.corebackend.repository.TaskRepository;
 import com.intelligenttime.corebackend.repository.TimeSessionRepository;
 import com.intelligenttime.corebackend.repository.UserRepository;
@@ -31,7 +32,7 @@ public class TimeSessionService {
     @Transactional
     public SessionResponse startSession(StartSessionRequest request) {
         User user = userRepository.findByEmail(request.getUserEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.getUserEmail()));
 
         TimeSession session = new TimeSession();
         session.setUser(user);
@@ -40,7 +41,7 @@ public class TimeSessionService {
 
         if (request.getTaskId() != null) {
             Task task = taskRepository.findById(request.getTaskId())
-                    .orElseThrow(() -> new RuntimeException("Task not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + request.getTaskId()));
             session.setTask(task);
             task.setStatus("in_progress");
             taskRepository.save(task);
@@ -53,7 +54,7 @@ public class TimeSessionService {
     @Transactional
     public SessionResponse stopSession(UUID sessionId) {
         TimeSession session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new RuntimeException("Session not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Session not found: " + sessionId));
 
         ZonedDateTime endTime = ZonedDateTime.now();
         session.setEndTime(endTime);

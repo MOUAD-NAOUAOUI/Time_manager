@@ -1,9 +1,10 @@
 package com.intelligenttime.corebackend.controller;
 
-import com.intelligenttime.corebackend.dto.RegisterRequest;
+import com.intelligenttime.corebackend.dto.AuthResponse;
 import com.intelligenttime.corebackend.dto.LoginRequest;
-import com.intelligenttime.corebackend.entity.User;
+import com.intelligenttime.corebackend.dto.RegisterRequest;
 import com.intelligenttime.corebackend.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,18 +15,17 @@ public class AuthController {
 
     public AuthController(UserService userService) {
         this.userService = userService;
-
     }
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
-        User registeredUser = userService.registerUser(request);
-        return ResponseEntity.ok(registeredUser);
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+        AuthResponse response = userService.registerUser(request);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        User user = userService.loginUser(request);
-        return ResponseEntity.ok(user);
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+        AuthResponse response = userService.loginUser(request);
+        return ResponseEntity.ok(response);
     }
 }

@@ -11,14 +11,18 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
     try {
-      const res = await fetch("http://127.0.0.1:8080/auth/register", {
+      const res = await fetch(`${apiBase}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       if (res.ok) {
-        window.location.href = "/auth/login";
+        const data = await res.json();
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("email", data.email || form.email);
+        window.location.href = "/dashboard";
       } else {
         const err = await res.json();
         alert(err.message || "Registration failed. Email may already be in use.");

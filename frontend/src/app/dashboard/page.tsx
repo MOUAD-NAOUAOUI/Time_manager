@@ -123,13 +123,17 @@ export default function DashboardPage() {
     Authorization: `Bearer ${token}`,
   };
 
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
+  const aiApiBase = process.env.NEXT_PUBLIC_AI_API_URL || "http://127.0.0.1:8000";
+
+  // Fetch analytics + tasks on mount
   useEffect(() => {
-    fetch(`http://127.0.0.1:8080/analytics/dashboard?email=${encodeURIComponent(email)}`, { headers })
+    fetch(`${apiBase}/analytics/dashboard?email=${encodeURIComponent(email)}`, { headers })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setAnalytics(d))
       .catch(() => {});
 
-    fetch(`http://127.0.0.1:8080/tasks?email=${encodeURIComponent(email)}`, { headers })
+    fetch(`${apiBase}/tasks?email=${encodeURIComponent(email)}`, { headers })
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setTasks(d))
       .catch(() => {});
@@ -139,7 +143,7 @@ export default function DashboardPage() {
   // Fetch AI coaching after analytics loaded
   useEffect(() => {
     if (!analytics) return;
-    fetch("http://localhost:8000/coach/analyze", {
+    fetch(`${aiApiBase}/coach/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -163,7 +167,7 @@ export default function DashboardPage() {
 
   const startSession = async (task: Task) => {
     try {
-      const res = await fetch("http://127.0.0.1:8080/sessions", {
+      const res = await fetch(`${apiBase}/sessions`, {
         method: "POST",
         headers,
         body: JSON.stringify({ userEmail: email, taskId: task.id }),
@@ -180,7 +184,7 @@ export default function DashboardPage() {
   const stopSession = async () => {
     if (!sessionId) return;
     try {
-      await fetch(`http://127.0.0.1:8080/sessions/${sessionId}/stop`, { method: "PUT", headers });
+      await fetch(`${apiBase}/sessions/${sessionId}/stop`, { method: "PUT", headers });
     } catch { /* offline */ }
     setActiveSession(null);
     setSessionId(null);

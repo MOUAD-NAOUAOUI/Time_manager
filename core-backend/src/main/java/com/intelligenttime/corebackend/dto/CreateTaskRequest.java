@@ -1,12 +1,20 @@
 package com.intelligenttime.corebackend.dto;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import java.time.ZonedDateTime;
 
 public class CreateTaskRequest {
     private String userEmail;
+
+    @NotBlank(message = "Task title is required")
     private String title;
+
     private String color = "#A0785A";
+
+    @Min(value = 1, message = "Estimated minutes must be at least 1")
     private Integer estimatedMinutes = 30;
+
     private ZonedDateTime deadline;
 
     public CreateTaskRequest() {}

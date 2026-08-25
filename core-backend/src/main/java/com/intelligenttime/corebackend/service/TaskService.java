@@ -4,6 +4,7 @@ import com.intelligenttime.corebackend.dto.CreateTaskRequest;
 import com.intelligenttime.corebackend.dto.TaskResponse;
 import com.intelligenttime.corebackend.entity.Task;
 import com.intelligenttime.corebackend.entity.User;
+import com.intelligenttime.corebackend.exception.ResourceNotFoundException;
 import com.intelligenttime.corebackend.repository.TaskRepository;
 import com.intelligenttime.corebackend.repository.UserRepository;
 import org.springframework.stereotype.Service;
@@ -24,7 +25,7 @@ public class TaskService {
     @Transactional
     public TaskResponse createTask(CreateTaskRequest request) {
         User user = userRepository.findByEmail(request.getUserEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.getUserEmail()));
         Task task = new Task();
         task.setUser(user);
         task.setTitle(request.getTitle());
@@ -37,7 +38,7 @@ public class TaskService {
 
     public List<TaskResponse> getUserTasks(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
         return taskRepository.findByUserId(user.getId())
                 .stream()
                 .map(this::mapToResponse)

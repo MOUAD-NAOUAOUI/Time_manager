@@ -1,11 +1,16 @@
 package com.intelligenttime.corebackend.service;
 
-import com.intelligenttime.corebackend.dto.*;
-import com.intelligenttime.corebackend.entity.*;
-import com.intelligenttime.corebackend.repository.*;
+import com.intelligenttime.corebackend.dto.AuthResponse;
+import com.intelligenttime.corebackend.dto.RegisterRequest;
+import com.intelligenttime.corebackend.entity.Subscription;
+import com.intelligenttime.corebackend.entity.User;
+import com.intelligenttime.corebackend.exception.BadRequestException;
+import com.intelligenttime.corebackend.repository.SubscriptionRepository;
+import com.intelligenttime.corebackend.repository.UserRepository;
+import com.intelligenttime.corebackend.security.JwtService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -22,8 +27,14 @@ public class UserServiceTest {
     @Mock
     private SubscriptionRepository subscriptionRepository;
 
-    @InjectMocks
+    private JwtService jwtService;
     private UserService userService;
+
+    @BeforeEach
+    void setUp() {
+        jwtService = new JwtService();
+        userService = new UserService(userRepository, subscriptionRepository, jwtService);
+    }
 
     @Test
     void registerUser_Success() {
@@ -34,10 +45,12 @@ public class UserServiceTest {
         when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        User result = userService.registerUser(request);
+        AuthResponse result = userService.registerUser(request);
 
         assertNotNull(result);
         assertEquals("test@example.com", result.getEmail());
+        assertNotNull(result.getToken());
+        assertTrue(jwtService.validateToken(result.getToken(), "test@example.com"));
         verify(subscriptionRepository, times(1)).save(any(Subscription.class));
     }
 
@@ -47,6 +60,6 @@ public class UserServiceTest {
         request.setEmail("existing@example.com");
         when(userRepository.existsByEmail("existing@example.com")).thenReturn(true);
 
-        assertThrows(RuntimeException.class, () -> userService.registerUser(request));
+        assertThrows(BadRequestException.class, () -> userService.registerUser(request));
     }
 }

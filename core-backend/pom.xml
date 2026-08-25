@@ -56,7 +56,34 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        </dependencies>
+
+        <!-- JJWT API -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.11.5</version>
+        </dependency>
+        <!-- JJWT Impl -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- JJWT Jackson -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.11.5</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- Spring Boot Starter Validation -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+    </dependencies>
+
 
         <build>
             <plugins>
@@ -64,6 +91,30 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
+                </plugin>
+                <!-- OWASP Dependency-Check (100% Free & Open Source) -->
+                <plugin>
+                    <groupId>org.owasp</groupId>
+                    <artifactId>dependency-check-maven</artifactId>
+                    <version>10.0.3</version>
+                    <configuration>
+                        <format>HTML</format>
+                        <autoUpdate>true</autoUpdate>
+                    </configuration>
+                </plugin>
+                <!-- PMD Source Code Security & Bug Analyzer -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-pmd-plugin</artifactId>
+                    <version>3.21.2</version>
+                    <configuration>
+                        <rulesets>
+                            <ruleset>category/java/security.xml</ruleset>
+                            <ruleset>category/java/errorprone.xml</ruleset>
+                            <ruleset>category/java/bestpractices.xml</ruleset>
+                        </rulesets>
+                        <printFailingErrors>true</printFailingErrors>
+                    </configuration>
                 </plugin>
             </plugins>
         </build>

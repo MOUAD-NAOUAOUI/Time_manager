@@ -3,7 +3,9 @@ package com.intelligenttime.corebackend.controller;
 import com.intelligenttime.corebackend.dto.SessionResponse;
 import com.intelligenttime.corebackend.dto.StartSessionRequest;
 import com.intelligenttime.corebackend.service.TimeSessionService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -19,7 +21,11 @@ public class TimeSessionController {
     }
 
     @PostMapping
-    public ResponseEntity<SessionResponse> startSession(@RequestBody StartSessionRequest request) {
+    public ResponseEntity<SessionResponse> startSession(@Valid @RequestBody StartSessionRequest request,
+                                                        Authentication authentication) {
+        if (authentication != null && authentication.getName() != null) {
+            request.setUserEmail(authentication.getName());
+        }
         return ResponseEntity.ok(sessionService.startSession(request));
     }
 

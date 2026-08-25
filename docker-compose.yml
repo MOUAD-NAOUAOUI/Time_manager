@@ -1,14 +1,13 @@
-version: '3.8'
 services:
   postgres:
     image: ankane/pgvector:latest
     container_name: intelligent_time_postgres
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: ONEPIECE1000ONEPIECE56
-      POSTGRES_DB: smart_time
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ONEPIECE1000ONEPIECE56}
+      POSTGRES_DB: ${DB_NAME:-smart_time}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -24,8 +23,12 @@ services:
   ai-microservice:
     build: ./ai-microservice
     container_name: intelligent_time_ai
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - PORT=${AI_SERVICE_PORT:-8000}
     ports:
-      - "8000:8000"
+      - "${AI_SERVICE_PORT:-8000}:8000"
     depends_on:
       - postgres
     restart: unless-stopped

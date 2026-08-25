@@ -11,16 +11,17 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
     try {
-      const res = await fetch("http://127.0.0.1:8080/auth/login", {
+      const res = await fetch(`${apiBase}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       if (res.ok) {
         const data = await res.json();
-        localStorage.setItem("token", data.token || data.id);
-        localStorage.setItem("email", form.email);
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("email", data.email || form.email);
         window.location.href = "/dashboard";
       } else {
         alert("Invalid credentials. Please try again.");

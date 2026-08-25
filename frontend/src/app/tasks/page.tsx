@@ -29,8 +29,10 @@ export default function TasksPage() {
   const token  = typeof window !== "undefined" ? localStorage.getItem("token") || "" : "";
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
+
   const fetchTasks = () => {
-    fetch(`http://127.0.0.1:8080/tasks?email=${encodeURIComponent(email)}`, { headers })
+    fetch(`${apiBase}/tasks?email=${encodeURIComponent(email)}`, { headers })
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setTasks(d))
       .catch(() => {});
@@ -42,7 +44,7 @@ export default function TasksPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8080/tasks", {
+      const res = await fetch(`${apiBase}/tasks`, {
         method: "POST",
         headers,
         body: JSON.stringify({ ...form, userEmail: email }),

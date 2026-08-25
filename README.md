@@ -96,16 +96,45 @@ The expected workflow is:
         - [x] `AnalyticsController.java` (`GET /analytics/dashboard`) - done
         - [x] `SecurityConfig.java` (Stateless Security Rules & Public Dev Paths) - done
         - [x] Frontend Next.js 16 (Landing Page, Login, Register, Dashboard, Tasks) - done
+        - [ ] Transition MVP to Production SaaS (In Progress)
+            - [x] Implement real JWT token generation & request security filters in Spring Boot - done
+            - [x] Integrate LangChain + Groq API (ChatGroq + Llama 3.3) for real AI Coaching recommendations - done
+            - [x] Implement Global Exception Handling (`@RestControllerAdvice`) with standardized JSON error responses (`ErrorResponse.java`) - done
+            - [x] Add Bean Validation (`@Valid`, `@NotBlank`, `@Email`, `@Size`, `@Min`, `@NotNull`) to all request DTOs and controllers - done
+            - [x] Replace generic `RuntimeException` with typed exceptions (`BadRequestException`, `ResourceNotFoundException`, `UnauthorizedException`) across all services - done
+            - [x] AI Constraint-Based Scheduling Engine v2 (`POST /schedule/generate`, `GET /schedule/today`) — deadline urgency scoring, energy window alignment, overload detection, smart breaks, Groq-powered natural language explanation - done
+            - [x] New Java DTOs: `ScheduleTaskItem`, `ScheduleRequest`, `ScheduleResponse`, `ScheduleMetrics`, `TimeBlockResponse` — full snake_case ↔ camelCase mapping with `@JsonProperty` - done
+            - [x] `AIClientService.generateSchedule()` — Java → Python bridge with graceful offline fallback - done
+            - [x] Production deployment guide documented (domain purchase, DNS, SSL, Nginx, CORS fix, cost estimate ~$13/mo) - done
+            - [ ] Rate Limiting on auth endpoints (Redis-backed brute-force protection)
+            - [ ] AES-256 application-level database encryption for credentials
+            - [ ] AI Chat Engine (conversational task extraction + proposal confirmation workflow)
+            - [ ] Replace hardcoded weekly chart data in Next.js with real API calls to Spring Boot
+            - [x] Extract all hardcoded secrets, database credentials (Java/Python), and API URLs into environment variables (.env / system variables) - done
 13. Unit Testing - done
     - [x] `UserServiceTest.java` (User registration & duplicate prevention unit tests) - done
     - [x] `TaskServiceTest.java` (Task creation & user tasks retrieval unit tests) - done
     - [x] `TimeSessionServiceTest.java` (Start & Stop time tracking session unit tests) - done
     - [x] `AnalyticsServiceTest.java` (Dashboard analytics calculation unit tests) - done
-14. Integration Testing
+    - [x] `AIClientServiceTest.java` (AI bridge fallback & decomposition unit tests) - done
+    - [x] All 8 unit tests verified passing after every refactoring session (`mvn test` → BUILD SUCCESS) - done
+14. Integration Testing (In Progress) - validated with mock APIs, awaiting real integration
 15. End-to-End Testing
 16. Performance Testing
-17. Security Testing
+17. Security Testing (In Progress)
+    - [x] PMD Source Code Security & Bug Audit (0 vulnerabilities, 0 critical bugs) - done
+    - [x] OWASP Dependency-Check Scanner Configured - done
+    - [x] Stateless JWT Filter & Route Authorization Verified - done
+    - [x] Sensitive Secrets and DB Credentials Isolated in .env - done
+    - [x] Global Exception Handler prevents stack trace leakage (OWASP CWE-209 mitigated) - done
+    - [x] Input Validation (`@Valid`) prevents malformed payloads from reaching business layer - done
+    - [x] PMD re-audit post scheduling engine: 0 violations, BUILD SUCCESS (`mvn pmd:check` verified) - done
+    - [ ] Rate Limiting — `/auth/login` brute-force protection (next security milestone)
 18. Deployment
+    - [x] Production deployment plan documented (domain, DNS, SSL, Nginx, Docker prod compose, cost) - done
+    - [ ] Purchase domain & provision cloud server
+    - [ ] Configure Cloudflare DNS + Let's Encrypt SSL
+    - [ ] Deploy with `docker compose -f docker-compose.prod.yml up -d --build`
 19. Monitoring
 20. Maintenance
 21. Continuous Improvement

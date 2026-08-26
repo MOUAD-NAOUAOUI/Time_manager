@@ -1,12 +1,12 @@
 package com.intelligenttime.corebackend.entity;
 
+import com.intelligenttime.corebackend.security.AesEncryptionConverter;
 import jakarta.persistence.*;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "subscriptions")
-
 public class Subscription {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -22,6 +22,10 @@ public class Subscription {
 
     @Column(name = "status", nullable = false)
     private String status = "active";
+
+    @Convert(converter = AesEncryptionConverter.class)
+    @Column(name = "stripe_customer_id")
+    private String stripeCustomerId;
 
     @Column(name = "current_period_start")
     private ZonedDateTime currentPeriodStart;
@@ -43,6 +47,9 @@ public class Subscription {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getStripeCustomerId() { return stripeCustomerId; }
+    public void setStripeCustomerId(String stripeCustomerId) { this.stripeCustomerId = stripeCustomerId; }
 
     public ZonedDateTime getCurrentPeriodStart() { return currentPeriodStart; }
     public void setCurrentPeriodStart(ZonedDateTime currentPeriodStart) { this.currentPeriodStart = currentPeriodStart; }

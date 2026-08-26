@@ -11,23 +11,46 @@ import com.intelligenttime.corebackend.exception.ResourceNotFoundException;
 import com.intelligenttime.corebackend.repository.SubscriptionRepository;
 import com.intelligenttime.corebackend.repository.UserRepository;
 import com.intelligenttime.corebackend.security.JwtService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class UserService {
+    private static final String DEFAULT_CLIENT_IP = "localhost";
+
     private final UserRepository userRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final JwtService jwtService;
+    private final RateLimiterService rateLimiterService;
+    private final SecurityAuditService securityAuditService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    @Autowired
+    public UserService(UserRepository userRepository,
+                       SubscriptionRepository subscriptionRepository,
+                       JwtService jwtService,
+                       @Autowired(required = false) RateLimiterService rateLimiterService,
+                       @Autowired(required = false) SecurityAuditService securityAuditService) {
+        this.userRepository = userRepository;
+        this.subscriptionRepository = subscriptionRepository;
+        this.jwtService = jwtService;
+        this.rateLimiterService = rateLimiterService != null ? rateLimiterService : new RateLimiterService(null, 5, 60, 900);
+        this.securityAuditService = securityAuditService;
+    }
+
+    public UserService(UserRepository userRepository,
+                       SubscriptionRepository subscriptionRepository,
+                       JwtService jwtService,
+                       RateLimiterService rateLimiterService) {
+        this(userRepository, subscriptionRepository, jwtService, rateLimiterService, null);
+    }
 
     public UserService(UserRepository userRepository,
                        SubscriptionRepository subscriptionRepository,
                        JwtService jwtService) {
-        this.userRepository = userRepository;
-        this.subscriptionRepository = subscriptionRepository;
-        this.jwtService = jwtService;
+        this(userRepository, subscriptionRepository, jwtService, null, null);
     }
 
     @Transactional
@@ -47,16 +70,37 @@ public class UserService {
         subscription.setUser(savedUser);
         subscriptionRepository.save(subscription);
 
+        if (securityAuditService != null) {
+            securityAuditService.logEvent(savedUser.getEmail(), "USER_REGISTRATION", DEFAULT_CLIENT_IP, "API", "User registered successfully");
+        }
+
         String token = jwtService.generateToken(savedUser.getEmail());
         return new AuthResponse(token, savedUser.getId(), savedUser.getEmail());
     }
 
     public AuthResponse loginUser(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BadRequestException("Invalid email or password"));
+        return loginUser(request, DEFAULT_CLIENT_IP);
+    }
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+    public AuthResponse loginUser(LoginRequest request, String clientIp) {
+        String effectiveIp = (clientIp != null && !clientIp.isEmpty()) ? clientIp : DEFAULT_CLIENT_IP;
+        String rateLimitKey = "login:attempt:" + effectiveIp + ":" + request.getEmail();
+        rateLimiterService.checkLimit(rateLimitKey);
+
+        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
+
+        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            rateLimiterService.recordFailure(rateLimitKey);
+            if (securityAuditService != null) {
+                securityAuditService.logEvent(request.getEmail(), "LOGIN_FAILURE", effectiveIp, "API", "Invalid credentials provided");
+            }
             throw new BadRequestException("Invalid email or password");
+        }
+
+        rateLimiterService.resetLimit(rateLimitKey);
+
+        if (securityAuditService != null) {
+            securityAuditService.logEvent(user.getEmail(), "LOGIN_SUCCESS", effectiveIp, "API", "Successful authentication");
         }
 
         String token = jwtService.generateToken(user.getEmail());

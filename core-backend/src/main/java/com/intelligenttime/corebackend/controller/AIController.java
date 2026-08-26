@@ -1,31 +1,42 @@
 package com.intelligenttime.corebackend.controller;
 
-import com.intelligenttime.corebackend.dto.DecomposeGoalRequest;
-import com.intelligenttime.corebackend.dto.DecomposeGoalResponse;
-import com.intelligenttime.corebackend.dto.TaskResponse;
+import com.intelligenttime.corebackend.dto.*;
+import com.intelligenttime.corebackend.entity.ChatMessage;
+import com.intelligenttime.corebackend.entity.ChatSession;
+import com.intelligenttime.corebackend.exception.UnauthorizedException;
 import com.intelligenttime.corebackend.service.AIClientService;
+import com.intelligenttime.corebackend.service.ChatPersistenceService;
+import com.intelligenttime.corebackend.service.TaskService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/ai")
 public class AIController {
 
     private final AIClientService aiClientService;
+    private final TaskService taskService;
+    private final ChatPersistenceService chatPersistenceService;
 
-    public AIController(AIClientService aiClientService) {
+    public AIController(
+            AIClientService aiClientService,
+            TaskService taskService,
+            ChatPersistenceService chatPersistenceService) {
         this.aiClientService = aiClientService;
+        this.taskService = taskService;
+        this.chatPersistenceService = chatPersistenceService;
     }
 
     @PostMapping("/decompose")
     public ResponseEntity<DecomposeGoalResponse> decomposeGoal(
             @Valid @RequestBody DecomposeGoalRequest request,
             Authentication authentication) {
-        String userEmail = authentication != null ? authentication.getName() : "user@example.com";
+        String userEmail = getAuthenticatedEmail(authentication);
         DecomposeGoalResponse response = aiClientService.decomposeGoal(
                 userEmail, request.getGoal(), request.getTargetHours());
         return ResponseEntity.ok(response);
@@ -35,9 +46,64 @@ public class AIController {
     public ResponseEntity<List<TaskResponse>> decomposeAndSave(
             @Valid @RequestBody DecomposeGoalRequest request,
             Authentication authentication) {
-        String userEmail = authentication != null ? authentication.getName() : "user@example.com";
+        String userEmail = getAuthenticatedEmail(authentication);
         List<TaskResponse> savedTasks = aiClientService.decomposeAndSaveTasks(
                 userEmail, request.getGoal(), request.getTargetHours());
         return ResponseEntity.ok(savedTasks);
+    }
+
+    @PostMapping("/chat")
+    public ResponseEntity<ChatProcessResponse> processChat(
+            @Valid @RequestBody ChatProcessRequest request,
+            @RequestParam(required = false) UUID sessionId,
+            Authentication authentication) {
+        String userEmail = getAuthenticatedEmail(authentication);
+
+        // Get or create persistent conversation session
+        ChatSession session = chatPersistenceService.getOrCreateSession(userEmail, sessionId);
+        chatPersistenceService.saveMessage(session.getId(), "user", request.getMessage());
+
+        List<TaskResponse> existingTasks = taskService.getUserTasks(userEmail);
+        ChatProcessResponse response = aiClientService.processChatMessage(
+                userEmail, request.getMessage(), existingTasks);
+
+        chatPersistenceService.saveMessage(session.getId(), "assistant", response.getAiReply());
+
+        if (response.getProposal() != null) {
+            chatPersistenceService.saveProposal(session.getId(), userEmail, response.getProposal());
+        }
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/chat/confirm")
+    public ResponseEntity<List<TaskResponse>> confirmProposal(
+            @Valid @RequestBody ConfirmProposalRequest request,
+            Authentication authentication) {
+        String userEmail = getAuthenticatedEmail(authentication);
+        List<TaskResponse> savedTasks = aiClientService.confirmAndSaveTasks(
+                userEmail, request.getTasks());
+        return ResponseEntity.ok(savedTasks);
+    }
+
+    @GetMapping("/chat/sessions")
+    public ResponseEntity<List<ChatSession>> getChatSessions(Authentication authentication) {
+        String userEmail = getAuthenticatedEmail(authentication);
+        return ResponseEntity.ok(chatPersistenceService.getUserSessions(userEmail));
+    }
+
+    @GetMapping("/chat/sessions/{sessionId}/messages")
+    public ResponseEntity<List<ChatMessage>> getSessionMessages(
+            @PathVariable UUID sessionId,
+            Authentication authentication) {
+        String userEmail = getAuthenticatedEmail(authentication);
+        return ResponseEntity.ok(chatPersistenceService.getSessionMessages(sessionId, userEmail));
+    }
+
+    private String getAuthenticatedEmail(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+            throw new UnauthorizedException("Authentication token required for AI operations");
+        }
+        return authentication.getName();
     }
 }

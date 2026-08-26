@@ -13,6 +13,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,11 +45,15 @@ public class AnalyticsServiceTest {
 
         Task task1 = new Task();
         task1.setStatus("completed");
+        task1.setCreatedAt(ZonedDateTime.now());
+
         Task task2 = new Task();
         task2.setStatus("pending");
+        task2.setCreatedAt(ZonedDateTime.now());
 
         TimeSession session = new TimeSession();
         session.setDurationMinutes(45);
+        session.setStartTime(ZonedDateTime.now());
 
         when(userRepository.findByEmail("analytics@example.com")).thenReturn(Optional.of(user));
         when(taskRepository.findByUserId(userId)).thenReturn(List.of(task1, task2));
@@ -62,5 +67,7 @@ public class AnalyticsServiceTest {
         assertEquals(1, response.getPendingTasks());
         assertEquals(45, response.getTotalFocusMinutes());
         assertEquals(50.0, response.getCompletionRate());
+        assertNotNull(response.getWeeklyMetrics());
+        assertEquals(7, response.getWeeklyMetrics().size());
     }
 }

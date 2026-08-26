@@ -47,7 +47,6 @@ public class AIClientService {
                     endpoint, requestEntity, DecomposeGoalResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            // Fallback response if AI service is offline
             List<DecomposedSubTaskResponse> fallbackTasks = List.of(
                     new DecomposedSubTaskResponse("Planning & Research: " + goal, 45, "high", "#A0785A"),
                     new DecomposedSubTaskResponse("Execution: " + goal, 90, "high", "#2563EB"),
@@ -81,11 +80,10 @@ public class AIClientService {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        // Map Java ScheduleRequest → Python snake_case payload
         Map<String, Object> payload = new HashMap<>();
-        payload.put("user_email",  request.getUserEmail());
-        payload.put("start_hour",  request.getStartHour());
-        payload.put("end_hour",    request.getEndHour());
+        payload.put("user_email", request.getUserEmail());
+        payload.put("start_hour", request.getStartHour());
+        payload.put("end_hour", request.getEndHour());
         if (request.getDate() != null) {
             payload.put("date", request.getDate());
         }
@@ -93,13 +91,13 @@ public class AIClientService {
         List<Map<String, Object>> taskList = new ArrayList<>();
         for (ScheduleTaskItem t : request.getTasks()) {
             Map<String, Object> taskMap = new HashMap<>();
-            taskMap.put("id",                 t.getId());
-            taskMap.put("title",              t.getTitle());
-            taskMap.put("estimated_minutes",  t.getEstimatedMinutes());
-            taskMap.put("deadline",           t.getDeadline());
-            taskMap.put("priority",           t.getPriority());
-            taskMap.put("energy_required",    t.getEnergyRequired());
-            taskMap.put("color",              t.getColor());
+            taskMap.put("id", t.getId());
+            taskMap.put("title", t.getTitle());
+            taskMap.put("estimated_minutes", t.getEstimatedMinutes());
+            taskMap.put("deadline", t.getDeadline());
+            taskMap.put("priority", t.getPriority());
+            taskMap.put("energy_required", t.getEnergyRequired());
+            taskMap.put("color", t.getColor());
             taskList.add(taskMap);
         }
         payload.put("tasks", taskList);
@@ -111,7 +109,6 @@ public class AIClientService {
                     endpoint, requestEntity, ScheduleResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            // Graceful fallback if Python service is offline
             ScheduleMetrics fallbackMetrics = new ScheduleMetrics();
             fallbackMetrics.setTotalTasks(request.getTasks().size());
             fallbackMetrics.setScheduledTasks(0);
@@ -126,5 +123,60 @@ public class AIClientService {
             fallback.setRecommendation("AI scheduling service is temporarily offline. Please try again shortly.");
             return fallback;
         }
+    }
+
+    public ChatProcessResponse processChatMessage(String userEmail, String message, List<TaskResponse> existingTasks) {
+        String endpoint = aiServiceUrl + "/chat/process";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("user_email", userEmail);
+        payload.put("message", message);
+
+        List<Map<String, Object>> taskList = new ArrayList<>();
+        if (existingTasks != null) {
+            for (TaskResponse t : existingTasks) {
+                Map<String, Object> tm = new HashMap<>();
+                tm.put("id", t.getId() != null ? t.getId().toString() : null);
+                tm.put("title", t.getTitle());
+                tm.put("estimated_minutes", t.getEstimatedMinutes());
+                tm.put("status", t.getStatus());
+                tm.put("deadline", t.getDeadline() != null ? t.getDeadline().toString() : null);
+                taskList.add(tm);
+            }
+        }
+        payload.put("existing_tasks", taskList);
+        payload.put("history", new ArrayList<>());
+
+        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(payload, headers);
+
+        try {
+            ResponseEntity<ChatProcessResponse> response = restTemplate.postForEntity(
+                    endpoint, requestEntity, ChatProcessResponse.class);
+            return response.getBody();
+        } catch (Exception e) {
+            ChatProcessResponse fallback = new ChatProcessResponse();
+            fallback.setUserEmail(userEmail);
+            fallback.setMessage(message);
+            fallback.setAiReply("AI assistant is temporarily offline. Please try again shortly.");
+            return fallback;
+        }
+    }
+
+    public List<TaskResponse> confirmAndSaveTasks(String userEmail, List<ExtractedTaskItemDTO> tasks) {
+        List<TaskResponse> savedTasks = new ArrayList<>();
+        if (tasks != null) {
+            for (ExtractedTaskItemDTO task : tasks) {
+                CreateTaskRequest createReq = new CreateTaskRequest();
+                createReq.setUserEmail(userEmail);
+                createReq.setTitle(task.getTitle());
+                createReq.setColor(task.getColor());
+                createReq.setEstimatedMinutes(task.getEstimatedMinutes());
+                savedTasks.add(taskService.createTask(createReq));
+            }
+        }
+        return savedTasks;
     }
 }

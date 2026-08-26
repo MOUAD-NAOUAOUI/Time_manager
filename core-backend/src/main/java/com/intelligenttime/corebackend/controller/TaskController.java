@@ -2,12 +2,14 @@ package com.intelligenttime.corebackend.controller;
 
 import com.intelligenttime.corebackend.dto.CreateTaskRequest;
 import com.intelligenttime.corebackend.dto.TaskResponse;
+import com.intelligenttime.corebackend.dto.UpdateTaskStatusRequest;
 import com.intelligenttime.corebackend.service.TaskService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/tasks")
@@ -34,5 +36,17 @@ public class TaskController {
                 ? authentication.getName()
                 : email;
         return ResponseEntity.ok(taskService.getUserTasks(targetEmail));
+    }
+
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<TaskResponse> updateTaskStatus(
+            @PathVariable("id") UUID taskId,
+            @Valid @RequestBody UpdateTaskStatusRequest request,
+            Authentication authentication,
+            @RequestParam(required = false) String email) {
+        String targetEmail = (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : email;
+        return ResponseEntity.ok(taskService.updateStatus(taskId, targetEmail, request));
     }
 }

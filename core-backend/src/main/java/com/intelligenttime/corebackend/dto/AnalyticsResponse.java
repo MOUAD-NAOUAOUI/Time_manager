@@ -1,20 +1,29 @@
 package com.intelligenttime.corebackend.dto;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class AnalyticsResponse {
     private int totalTasks;
     private int completedTasks;
     private int pendingTasks;
     private int totalFocusMinutes;
     private double completionRate;
+    private List<DailyMetricDTO> weeklyMetrics = new ArrayList<>();
 
     public AnalyticsResponse() {}
 
     public AnalyticsResponse(int totalTasks, int completedTasks, int pendingTasks, int totalFocusMinutes, double completionRate) {
+        this(totalTasks, completedTasks, pendingTasks, totalFocusMinutes, completionRate, new ArrayList<>());
+    }
+
+    public AnalyticsResponse(int totalTasks, int completedTasks, int pendingTasks, int totalFocusMinutes, double completionRate, List<DailyMetricDTO> weeklyMetrics) {
         this.totalTasks = totalTasks;
         this.completedTasks = completedTasks;
         this.pendingTasks = pendingTasks;
         this.totalFocusMinutes = totalFocusMinutes;
         this.completionRate = completionRate;
+        this.weeklyMetrics = weeklyMetrics != null ? weeklyMetrics : new ArrayList<>();
     }
 
     public int getTotalTasks() { return totalTasks; }
@@ -31,4 +40,7 @@ public class AnalyticsResponse {
 
     public double getCompletionRate() { return completionRate; }
     public void setCompletionRate(double completionRate) { this.completionRate = completionRate; }
+
+    public List<DailyMetricDTO> getWeeklyMetrics() { return weeklyMetrics; }
+    public void setWeeklyMetrics(List<DailyMetricDTO> weeklyMetrics) { this.weeklyMetrics = weeklyMetrics; }
 }

@@ -7,8 +7,10 @@ import {
 } from "recharts";
 import {
   Clock, CheckCircle2, Target, Zap, Plus, Play, Square,
-  BarChart3, Brain, LogOut, ChevronRight,
+  BarChart3, Brain, LogOut, ChevronRight, Award, Activity,
+  Sparkles, TrendingUp, AlertCircle
 } from "lucide-react";
+import { API_URL, AI_API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Task {
@@ -19,12 +21,20 @@ interface Task {
   color: string;
 }
 
+interface DailyMetric {
+  day: string;
+  date: string;
+  focus: number;
+  tasks: number;
+}
+
 interface Analytics {
   totalTasks: number;
   completedTasks: number;
   pendingTasks: number;
   totalFocusMinutes: number;
   completionRate: number;
+  weeklyMetrics?: DailyMetric[];
 }
 
 interface CoachTip {
@@ -32,25 +42,26 @@ interface CoachTip {
   tips: string[];
 }
 
-// ── Mock chart data (will be replaced with real API data) ──────────────────
-const weeklyData = [
-  { day: "Mon", focus: 180, tasks: 4 },
-  { day: "Tue", focus: 240, tasks: 6 },
-  { day: "Wed", focus: 120, tasks: 3 },
-  { day: "Thu", focus: 300, tasks: 7 },
-  { day: "Fri", focus: 210, tasks: 5 },
-  { day: "Sat", focus: 90,  tasks: 2 },
-  { day: "Sun", focus: 60,  tasks: 1 },
-];
+interface ProductivityAssessment {
+  score: number;
+  completion_rate: number;
+  estimation_accuracy_percent: number;
+  deep_work_ratio: number;
+  burnout_risk: string;
+  grade: string;
+  strengths: string[];
+  growth_areas: string[];
+  actionable_advice: string[];
+}
 
 const BRAND = "#A0785A";
-const BRAND_LIGHT = "#C4A882";
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
 function Sidebar({ active }: { active: string }) {
   const links = [
     { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
     { href: "/tasks",     label: "Tasks",     icon: CheckCircle2 },
+    { href: "/schedule",  label: "Schedule",  icon: Clock },
   ];
   return (
     <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
@@ -111,43 +122,34 @@ export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [coach, setCoach] = useState<CoachTip | null>(null);
+  const [assessment, setAssessment] = useState<ProductivityAssessment | null>(null);
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
-  const email = typeof window !== "undefined" ? localStorage.getItem("email") || "user@example.com" : "";
-  const token  = typeof window !== "undefined" ? localStorage.getItem("token") || "" : "";
-
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-  };
-
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
-  const aiApiBase = process.env.NEXT_PUBLIC_AI_API_URL || "http://127.0.0.1:8000";
+  const email = getUserEmail();
 
   // Fetch analytics + tasks on mount
   useEffect(() => {
-    fetch(`${apiBase}/analytics/dashboard?email=${encodeURIComponent(email)}`, { headers })
+    fetchWithAuth(`${API_URL}/analytics/dashboard`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setAnalytics(d))
       .catch(() => {});
 
-    fetch(`${apiBase}/tasks?email=${encodeURIComponent(email)}`, { headers })
+    fetchWithAuth(`${API_URL}/tasks`)
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setTasks(d))
       .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email]);
+  }, []);
 
-  // Fetch AI coaching after analytics loaded
+  // Fetch AI coaching & Productivity Score after analytics/tasks loaded
   useEffect(() => {
     if (!analytics) return;
-    fetch(`${aiApiBase}/coach/analyze`, {
+    fetch(`${AI_API_URL}/coach/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user_email: email,
+        user_email: email || "user@example.com",
         total_tasks: analytics.totalTasks,
         completed_tasks: analytics.completedTasks,
         total_focus_minutes: analytics.totalFocusMinutes,
@@ -156,7 +158,30 @@ export default function DashboardPage() {
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setCoach(d))
       .catch(() => {});
-  }, [analytics, email]);
+
+    // Compute Advanced Productivity Score
+    const records = tasks.map(t => ({
+      title: t.title,
+      estimated_minutes: t.estimatedMinutes || 30,
+      actual_minutes: t.status === "completed" ? (t.estimatedMinutes || 30) : null,
+      status: t.status,
+      priority: "medium",
+      energy_required: "medium"
+    }));
+
+    fetch(`${AI_API_URL}/analytics/productivity-score`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_email: email || "user@example.com",
+        records: records,
+        total_focus_minutes: analytics.totalFocusMinutes || 0
+      }),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d && setAssessment(d))
+      .catch(() => {});
+  }, [analytics, tasks, email]);
 
   // Live timer tick
   useEffect(() => {
@@ -167,9 +192,8 @@ export default function DashboardPage() {
 
   const startSession = async (task: Task) => {
     try {
-      const res = await fetch(`${apiBase}/sessions`, {
+      const res = await fetchWithAuth(`${API_URL}/sessions`, {
         method: "POST",
-        headers,
         body: JSON.stringify({ userEmail: email, taskId: task.id }),
       });
       if (res.ok) {
@@ -178,13 +202,13 @@ export default function DashboardPage() {
         setSessionId(d.id);
         setElapsed(0);
       }
-    } catch { /* offline dev mode */ }
+    } catch { /* offline */ }
   };
 
   const stopSession = async () => {
     if (!sessionId) return;
     try {
-      await fetch(`${apiBase}/sessions/${sessionId}/stop`, { method: "PUT", headers });
+      await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
     } catch { /* offline */ }
     setActiveSession(null);
     setSessionId(null);
@@ -200,6 +224,18 @@ export default function DashboardPage() {
         { name: "Pending",   value: analytics?.pendingTasks   || 0, color: BRAND },
       ]
     : [{ name: "No data", value: 1, color: "#E8E2D9" }];
+
+  const liveChartData = (analytics?.weeklyMetrics && analytics.weeklyMetrics.length > 0)
+    ? analytics.weeklyMetrics
+    : [
+        { day: "Mon", focus: 0, tasks: 0 },
+        { day: "Tue", focus: 0, tasks: 0 },
+        { day: "Wed", focus: 0, tasks: 0 },
+        { day: "Thu", focus: 0, tasks: 0 },
+        { day: "Fri", focus: 0, tasks: 0 },
+        { day: "Sat", focus: 0, tasks: 0 },
+        { day: "Sun", focus: 0, tasks: 0 },
+      ];
 
   return (
     <div className="flex min-h-screen bg-[#FAFAF8]">
@@ -229,13 +265,13 @@ export default function DashboardPage() {
             <StatCard icon={Zap}          label="Completion Rate" value={`${analytics?.completionRate?.toFixed(0) || 0}%`} sub="of tasks done" color="#A0785A" />
           </div>
 
-          {/* ── Charts Row ── */}
+          {/* ── Charts Row (Live Real Database Metrics) ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Weekly Bar Chart */}
             <div className="lg:col-span-2 bg-white rounded-2xl border border-[#E8E2D9] p-6">
               <h2 className="font-heading font-600 text-[#1A1A1A] mb-4">Weekly Focus Time (min)</h2>
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={weeklyData} barSize={28}>
+                <BarChart data={liveChartData} barSize={28}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F0EBE3" vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#6B7280" }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 12, fill: "#6B7280" }} axisLine={false} tickLine={false} />
@@ -268,7 +304,7 @@ export default function DashboardPage() {
             <div className="lg:col-span-2 bg-white rounded-2xl border border-[#E8E2D9] p-6">
               <h2 className="font-heading font-600 text-[#1A1A1A] mb-4">Tasks Completed per Day</h2>
               <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={weeklyData}>
+                <LineChart data={liveChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F0EBE3" vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#6B7280" }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 12, fill: "#6B7280" }} axisLine={false} tickLine={false} />
@@ -305,6 +341,62 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+
+          {/* ── AI Productivity Index Card ── */}
+          {tasks.length > 0 && assessment && (
+            <div className="bg-white rounded-2xl p-6 border border-[#E8E2D9] shadow-sm">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-[#E8E2D9]">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#F5EFE8] flex items-center justify-center">
+                    <Award size={20} className="text-[#A0785A]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-heading font-700 text-base text-[#1A1A1A]">AI Productivity Index</h2>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-[#F5EFE8] text-[#A0785A] border border-[#A0785A]/20">
+                        Grade {assessment.grade}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#6B7280]">Cognitive execution & estimation accuracy</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-6">
+                  <div className="text-right">
+                    <p className="text-[11px] text-[#6B7280]">Overall Score</p>
+                    <p className="font-heading text-2xl font-800 text-[#A0785A]">{assessment.score}<span className="text-xs font-normal text-[#6B7280]">/100</span></p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] text-[#6B7280]">Burnout Risk</p>
+                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${
+                      assessment.burnout_risk === "low" ? "bg-green-50 text-[#16A34A] border border-green-200" :
+                      assessment.burnout_risk === "moderate" ? "bg-amber-50 text-[#D97706] border border-amber-200" :
+                      "bg-red-50 text-[#DC2626] border border-red-200"
+                    }`}>
+                      {assessment.burnout_risk}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 text-xs">
+                <div className="bg-[#FAFAF8] rounded-xl p-3 border border-[#E8E2D9]">
+                  <p className="text-[#6B7280] mb-1">Time Estimation Accuracy</p>
+                  <p className="font-semibold text-[#1A1A1A] text-sm">{assessment.estimation_accuracy_percent}%</p>
+                  <p className="text-[10px] text-[#6B7280] mt-0.5">Calibrated to planned task duration</p>
+                </div>
+                <div className="bg-[#FAFAF8] rounded-xl p-3 border border-[#E8E2D9]">
+                  <p className="text-[#6B7280] mb-1">Deep Work Ratio</p>
+                  <p className="font-semibold text-[#1A1A1A] text-sm">{assessment.deep_work_ratio}%</p>
+                  <p className="text-[10px] text-[#6B7280] mt-0.5">High-cognitive task execution</p>
+                </div>
+                <div className="bg-[#FAFAF8] rounded-xl p-3 border border-[#E8E2D9]">
+                  <p className="text-[#6B7280] mb-1">Strategic Advice</p>
+                  <p className="text-[#1A1A1A] italic leading-snug">{assessment.actionable_advice[0] || "Maintain balanced session rhythm."}</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Active Timer + Today's Tasks ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

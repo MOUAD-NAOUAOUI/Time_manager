@@ -2,8 +2,11 @@ package com.intelligenttime.corebackend.service;
 
 import com.intelligenttime.corebackend.dto.CreateTaskRequest;
 import com.intelligenttime.corebackend.dto.TaskResponse;
+import com.intelligenttime.corebackend.dto.UpdateTaskStatusRequest;
 import com.intelligenttime.corebackend.entity.Task;
 import com.intelligenttime.corebackend.entity.User;
+import com.intelligenttime.corebackend.exception.ResourceNotFoundException;
+import com.intelligenttime.corebackend.exception.UnauthorizedException;
 import com.intelligenttime.corebackend.repository.TaskRepository;
 import com.intelligenttime.corebackend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -75,5 +78,71 @@ public class TaskServiceTest {
 
         assertEquals(1, tasks.size());
         assertEquals("Test Task", tasks.get(0).getTitle());
+    }
+
+    @Test
+    void updateStatus_Success() {
+        UUID taskId = UUID.randomUUID();
+        User user = new User();
+        UUID userId = UUID.randomUUID();
+        user.setId(userId);
+        user.setEmail("test@example.com");
+
+        Task task = new Task();
+        task.setId(taskId);
+        task.setUser(user);
+        task.setTitle("Test Task");
+        task.setStatus("pending");
+
+        UpdateTaskStatusRequest request = new UpdateTaskStatusRequest();
+        request.setStatus("completed");
+        request.setActualMinutesSpent(45);
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user));
+        when(taskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TaskResponse response = taskService.updateStatus(taskId, "test@example.com", request);
+
+        assertNotNull(response);
+        assertEquals("completed", response.getStatus());
+        verify(taskRepository, times(1)).save(task);
+    }
+
+    @Test
+    void updateStatus_Unauthorized() {
+        UUID taskId = UUID.randomUUID();
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        owner.setEmail("owner@example.com");
+
+        User otherUser = new User();
+        otherUser.setId(UUID.randomUUID());
+        otherUser.setEmail("other@example.com");
+
+        Task task = new Task();
+        task.setId(taskId);
+        task.setUser(owner);
+
+        UpdateTaskStatusRequest request = new UpdateTaskStatusRequest();
+        request.setStatus("completed");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(userRepository.findByEmail("other@example.com")).thenReturn(Optional.of(otherUser));
+
+        assertThrows(UnauthorizedException.class, () ->
+                taskService.updateStatus(taskId, "other@example.com", request));
+    }
+
+    @Test
+    void updateStatus_NotFound() {
+        UUID taskId = UUID.randomUUID();
+        UpdateTaskStatusRequest request = new UpdateTaskStatusRequest();
+        request.setStatus("completed");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () ->
+                taskService.updateStatus(taskId, "test@example.com", request));
     }
 }

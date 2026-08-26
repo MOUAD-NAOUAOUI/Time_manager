@@ -78,7 +78,7 @@ The expected workflow is:
 9. API Design - done
 10. Security Design - done
 11. UI/UX Design - done
-12. Development (In Progress)
+12. Development - done
     - [x] Spring Boot Project Setup (`core-backend`) - done
     - [x] Docker Infrastructure (PostgreSQL + Redis) - done
     - [x] `User.java` Entity - done
@@ -96,7 +96,7 @@ The expected workflow is:
         - [x] `AnalyticsController.java` (`GET /analytics/dashboard`) - done
         - [x] `SecurityConfig.java` (Stateless Security Rules & Public Dev Paths) - done
         - [x] Frontend Next.js 16 (Landing Page, Login, Register, Dashboard, Tasks) - done
-        - [ ] Transition MVP to Production SaaS (In Progress)
+        - [x] Transition MVP to Production SaaS - done
             - [x] Implement real JWT token generation & request security filters in Spring Boot - done
             - [x] Integrate LangChain + Groq API (ChatGroq + Llama 3.3) for real AI Coaching recommendations - done
             - [x] Implement Global Exception Handling (`@RestControllerAdvice`) with standardized JSON error responses (`ErrorResponse.java`) - done
@@ -106,18 +106,40 @@ The expected workflow is:
             - [x] New Java DTOs: `ScheduleTaskItem`, `ScheduleRequest`, `ScheduleResponse`, `ScheduleMetrics`, `TimeBlockResponse` — full snake_case ↔ camelCase mapping with `@JsonProperty` - done
             - [x] `AIClientService.generateSchedule()` — Java → Python bridge with graceful offline fallback - done
             - [x] Production deployment guide documented (domain purchase, DNS, SSL, Nginx, CORS fix, cost estimate ~$13/mo) - done
-            - [ ] Rate Limiting on auth endpoints (Redis-backed brute-force protection)
-            - [ ] AES-256 application-level database encryption for credentials
-            - [ ] AI Chat Engine (conversational task extraction + proposal confirmation workflow)
-            - [ ] Replace hardcoded weekly chart data in Next.js with real API calls to Spring Boot
+            - [x] Rate Limiting on auth endpoints (Redis-backed brute-force protection with in-memory fallback, max 5 attempts/min, 15m lockout, HTTP 429 Retry-After) - done
+            - [x] AI Chat Engine & Dual Task Creation Modes (Manual Add Task Form + AI Prompt Assistant with Schedule Impact Preview & Proposal Confirmation) - done
+            - [x] Zero-Hardcoding Architecture Audit (Centralized `lib/api.ts`, dynamic CORS via `${CORS_ALLOWED_ORIGINS}`, strict JWT principal injection) - done
+            - [x] AES-256 application-level database encryption for credentials (`AesEncryptionConverter` with AES/GCM/NoPadding 256-bit AEAD + unique random IV per row) - done
+            - [x] Replace hardcoded weekly chart data in Next.js with real API calls to Spring Boot (`DailyMetricDTO` 7-day aggregated focus & task trends) - done
+            - [x] Comprehensive Database Schema Expansion (`schema.sql` + JPA Entities & Repositories: `chat_sessions`, `chat_messages`, `chat_proposals`, `schedules`, `schedule_time_blocks`, `coaching_insights`, `security_audit_logs`, enhanced `Task.java` with priority, energyRequired, category) - done
+            - [x] Deep Multi-Package Python AI Microservice Architecture (`core/`, `services/`, `routers/`, embeddings & similarity engine with pytest suite) - done
             - [x] Extract all hardcoded secrets, database credentials (Java/Python), and API URLs into environment variables (.env / system variables) - done
+            - [x] `ChatPersistenceService.java` — persistent chat sessions, messages, proposals with full CRUD + PMD-clean - done
+            - [x] `SchedulePersistenceService.java` — upsert AI-generated daily schedules and time blocks to PostgreSQL - done
+            - [x] `SecurityAuditService.java` — log LOGIN_SUCCESS, LOGIN_FAILURE, USER_REGISTRATION events to `security_audit_logs` - done
+            - [x] `AIController.java` updated — auto-creates chat sessions, persists messages and proposals (`GET /ai/chat/sessions`) - done
+            - [x] `ScheduleController.java` updated — saves AI schedule to DB after every generation - done
+            - [x] Interactive Day-View Timeline UI (`/schedule` page) — pixel-perfect time blocks, current-time indicator, constraint-reason tooltips, metrics bar, AI generate button - done
+            - [x] Next.js Route Guard Middleware (`middleware.ts`) — Edge runtime cookie-based auth guard protecting all non-public routes - done
+            - [x] `PATCH /tasks/{id}/status` — Task status lifecycle management (`pending`, `in_progress`, `completed`, `cancelled`) with owner verification and actual time tracking - done
+            - [x] Interactive Timeline & Task List Status Toggle — Instant completion toggle with visual feedback from both schedule blocks and task cards - done
+            - [x] Python Multi-Factor Productivity Scorer (`services/productivity_scorer.py` + `POST /analytics/productivity-score`) — assesses completion rate, time accuracy, deep work ratio & burnout risk - done
+            - [x] Python User Estimation Memory & Calibration Engine (`services/memory_service.py` + `POST /analytics/estimation-bias`) — computes bias factors & auto-padding multipliers - done
+            - [x] Python Hierarchical Milestone Goal Decomposer (`services/goal_decomposer.py` + `POST /analytics/decompose-advanced`) — resolves milestone dependencies & critical path - done
 13. Unit Testing - done
-    - [x] `UserServiceTest.java` (User registration & duplicate prevention unit tests) - done
-    - [x] `TaskServiceTest.java` (Task creation & user tasks retrieval unit tests) - done
+    - [x] `UserServiceTest.java` (User registration & duplicate prevention & login brute-force lock unit tests) - done
+    - [x] `TaskServiceTest.java` (Task creation, user tasks retrieval, status lifecycle & ownership tests) - done
     - [x] `TimeSessionServiceTest.java` (Start & Stop time tracking session unit tests) - done
     - [x] `AnalyticsServiceTest.java` (Dashboard analytics calculation unit tests) - done
     - [x] `AIClientServiceTest.java` (AI bridge fallback & decomposition unit tests) - done
-    - [x] All 8 unit tests verified passing after every refactoring session (`mvn test` → BUILD SUCCESS) - done
+    - [x] `RateLimiterServiceTest.java` (Rate limiter lockouts, window expiries, resets & fallback cache tests) - done
+    - [x] `AesEncryptionConverterTest.java` (AES-256-GCM round-trip encryption, distinct IV verification & null safety tests) - done
+    - [x] `ChatPersistenceServiceTest.java` (3 tests: getOrCreateSession, saveMessage, saveProposal) - done
+    - [x] `SchedulePersistenceServiceTest.java` (2 tests: saveOrUpdateSchedule, getScheduleByDate) - done
+    - [x] `SecurityAuditServiceTest.java` (2 tests: logEvent success, logEvent null safety) - done
+    - [x] All 26 Java unit tests verified passing (`mvn test` → BUILD SUCCESS) - done
+    - [x] All 8 Python AI microservice unit tests verified passing (`pytest` → 8 passed) - done
+    - [x] PMD 0 violations (`mvn pmd:check` → BUILD SUCCESS) - done
 14. Integration Testing (In Progress) - validated with mock APIs, awaiting real integration
 15. End-to-End Testing
 16. Performance Testing
@@ -128,8 +150,9 @@ The expected workflow is:
     - [x] Sensitive Secrets and DB Credentials Isolated in .env - done
     - [x] Global Exception Handler prevents stack trace leakage (OWASP CWE-209 mitigated) - done
     - [x] Input Validation (`@Valid`) prevents malformed payloads from reaching business layer - done
-    - [x] PMD re-audit post scheduling engine: 0 violations, BUILD SUCCESS (`mvn pmd:check` verified) - done
-    - [ ] Rate Limiting — `/auth/login` brute-force protection (next security milestone)
+    - [x] Rate Limiting (`RateLimiterService` + `TooManyRequestsException` + HTTP 429) stops credential stuffing & brute-force attacks - done
+    - [x] AES-256 Application-Level Database Encryption protects sensitive credentials & tokens at rest - done
+    - [x] PMD re-audit post encryption: 0 violations, BUILD SUCCESS (`mvn pmd:check` verified) - done
 18. Deployment
     - [x] Production deployment plan documented (domain, DNS, SSL, Nginx, Docker prod compose, cost) - done
     - [ ] Purchase domain & provision cloud server

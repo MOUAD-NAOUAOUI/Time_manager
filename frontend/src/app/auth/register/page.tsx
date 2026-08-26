@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Clock, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { API_URL } from "@/lib/api";
 
 export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -11,9 +12,8 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
     try {
-      const res = await fetch(`${apiBase}/auth/register`, {
+      const res = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -22,13 +22,14 @@ export default function RegisterPage() {
         const data = await res.json();
         localStorage.setItem("token", data.token);
         localStorage.setItem("email", data.email || form.email);
+        document.cookie = `auth_token=${data.token}; path=/; SameSite=Strict; max-age=86400`;
         window.location.href = "/dashboard";
       } else {
         const err = await res.json();
         alert(err.message || "Registration failed. Email may already be in use.");
       }
     } catch (err: any) {
-      alert("Registration Connection Error: " + err.message + "\nCheck browser console for more details.");
+      alert("Registration Connection Error: " + err.message);
       console.error("Fetch error details:", err);
     } finally {
       setLoading(false);

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Clock, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { API_URL } from "@/lib/api";
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -11,9 +12,8 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
     try {
-      const res = await fetch(`${apiBase}/auth/login`, {
+      const res = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -22,12 +22,14 @@ export default function LoginPage() {
         const data = await res.json();
         localStorage.setItem("token", data.token);
         localStorage.setItem("email", data.email || form.email);
+        document.cookie = `auth_token=${data.token}; path=/; SameSite=Strict; max-age=86400`;
         window.location.href = "/dashboard";
       } else {
-        alert("Invalid credentials. Please try again.");
+        const errData = await res.json().catch(() => null);
+        alert(errData?.message || "Invalid credentials. Please try again.");
       }
     } catch (err: any) {
-      alert("Login Connection Error: " + err.message + "\nCheck browser console for details.");
+      alert("Login Connection Error: " + err.message);
       console.error("Login fetch error:", err);
     } finally {
       setLoading(false);

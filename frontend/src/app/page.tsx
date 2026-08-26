@@ -76,18 +76,18 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── STATS BAR ── */}
+      {/* ── ARCHITECTURE HIGHLIGHTS ── */}
       <section className="bg-[#FAFAF8] border-y border-[#E8E2D9] py-10">
-        <div className="max-w-4xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+        <div className="max-w-5xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {[
-            { value: "2.4×", label: "Productivity boost" },
-            { value: "89%", label: "Task completion rate" },
-            { value: "47 min", label: "Daily time saved" },
-            { value: "10k+", label: "Users worldwide" },
-          ].map((stat) => (
-            <div key={stat.label}>
-              <div className="font-heading text-3xl font-800 text-[#A0785A]">{stat.value}</div>
-              <div className="text-sm text-[#6B7280] mt-1">{stat.label}</div>
+            { value: "Constraint AI", label: "Automated schedule optimizer" },
+            { value: "Live Tracking", label: "Real-time focus sessions" },
+            { value: "AES-256 GCM", label: "Encrypted data layer" },
+            { value: "LLaMA 3.3", label: "Personalized AI coaching" },
+          ].map((item) => (
+            <div key={item.label}>
+              <div className="font-heading text-xl font-800 text-[#A0785A]">{item.value}</div>
+              <div className="text-xs text-[#6B7280] mt-1">{item.label}</div>
             </div>
           ))}
         </div>

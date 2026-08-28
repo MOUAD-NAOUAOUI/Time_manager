@@ -43,7 +43,7 @@ public class JwtService {
 
     // Extracts the user email (subject) from the JWT token
     public String extractEmail(String token) {
-        return extractClaim(token, Claims::getSubject);
+        return extractClaim(token, claims -> claims.getSubject());
     }
 
     // Generic helper to extract a specific claim using a resolver function
@@ -69,6 +69,6 @@ public class JwtService {
 
     // Checks if the token expiration date has passed
     private boolean isTokenExpired(String token) {
-        return extractClaim(token, Claims::getExpiration).before(new Date());
+        return extractClaim(token, claims -> claims.getExpiration()).before(new Date());
     }
 }

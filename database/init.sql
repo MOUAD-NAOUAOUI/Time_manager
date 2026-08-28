@@ -36,7 +36,15 @@ create table subscriptions(
     id uuid primary key default gen_random_uuid(),
     user_id uuid not null references users(id) on delete cascade,
     stripe_customer_id varchar(255),
-    plan_type varchar(50) default 'free',
+    plan varchar(50) not null default 'free',
     status varchar(50) default 'active',
     created_at timestamp with time zone default CURRENT_TIMESTAMP 
 );
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS actual_minutes_spent INT DEFAULT 0;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'medium';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS energy_required VARCHAR(20) DEFAULT 'medium';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT 'general';
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS plan VARCHAR(50) NOT NULL DEFAULT 'free';
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS current_period_start TIMESTAMP WITH TIME ZONE;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMP WITH TIME ZONE;

@@ -16,21 +16,74 @@ public class CreateTaskRequest {
     private Integer estimatedMinutes = 30;
 
     private ZonedDateTime deadline;
+    private String priority = "medium";
+    private String energyRequired = "medium";
+    private String category = "general";
 
-    public CreateTaskRequest() {}
+    public CreateTaskRequest() {
+    }
 
-    public String getUserEmail() { return userEmail; }
-    public void setUserEmail(String userEmail) { this.userEmail = userEmail; }
+    public String getUserEmail() {
+        return userEmail;
+    }
 
-    public String getTitle() { return title; }
-    public void setTitle(String title) { this.title = title; }
+    public void setUserEmail(String userEmail) {
+        this.userEmail = userEmail;
+    }
 
-    public String getColor() { return color; }
-    public void setColor(String color) { this.color = color; }
+    public String getTitle() {
+        return title;
+    }
 
-    public Integer getEstimatedMinutes() { return estimatedMinutes; }
-    public void setEstimatedMinutes(Integer estimatedMinutes) { this.estimatedMinutes = estimatedMinutes; }
+    public void setTitle(String title) {
+        this.title = title;
+    }
 
-    public ZonedDateTime getDeadline() { return deadline; }
-    public void setDeadline(ZonedDateTime deadline) { this.deadline = deadline; }
+    public String getColor() {
+        return color;
+    }
+
+    public void setColor(String color) {
+        this.color = color;
+    }
+
+    public Integer getEstimatedMinutes() {
+        return estimatedMinutes;
+    }
+
+    public void setEstimatedMinutes(Integer estimatedMinutes) {
+        this.estimatedMinutes = estimatedMinutes;
+    }
+
+    public ZonedDateTime getDeadline() {
+        return deadline;
+    }
+
+    public void setDeadline(ZonedDateTime deadline) {
+        this.deadline = deadline;
+    }
+
+    public String getPriority() {
+        return priority;
+    }
+
+    public void setPriority(String priority) {
+        this.priority = priority;
+    }
+
+    public String getEnergyRequired() {
+        return energyRequired;
+    }
+
+    public void setEnergyRequired(String energyRequired) {
+        this.energyRequired = energyRequired;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
+    }
 }

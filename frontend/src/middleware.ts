@@ -10,7 +10,7 @@ import type { NextRequest } from "next/server";
 // ──────────────────────────────────────────────────────────────────────────────
 
 const PUBLIC_PATHS  = ["/", "/auth/login", "/auth/register"];
-const AUTH_PATHS    = ["/auth/login", "/auth/register"];
+const AUTH_PATHS    = ["/auth/login"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + "/"));

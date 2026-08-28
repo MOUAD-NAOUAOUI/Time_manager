@@ -21,3 +21,11 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}): Pro
   };
   return fetch(url, { ...options, headers });
 }
+
+export function logout(navigate: (path: string) => void) {
+  if (typeof window !== "undefined") {
+    localStorage.clear();
+    document.cookie = "auth_token=; path=/; max-age=0; SameSite=Strict";
+    navigate("/auth/login");
+  }
+}

@@ -1,6 +1,7 @@
 package com.intelligenttime.corebackend.service;
 
 import com.intelligenttime.corebackend.dto.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class AIClientService {
@@ -20,13 +22,21 @@ public class AIClientService {
     private final String aiServiceUrl;
     private final RestTemplate restTemplate;
     private final TaskService taskService;
+    private final String internalToken;
 
+    @Autowired
     public AIClientService(
             @Value("${ai.service.url:http://127.0.0.1:8000}") String aiServiceUrl,
+            @Value("${ai.service.internal-token:dev-internal-token}") String internalToken,
             TaskService taskService) {
         this.aiServiceUrl = aiServiceUrl;
+        this.internalToken = internalToken;
         this.taskService = taskService;
         this.restTemplate = new RestTemplate();
+    }
+
+    public AIClientService(String aiServiceUrl, TaskService taskService) {
+        this(aiServiceUrl, "dev-internal-token", taskService);
     }
 
     public DecomposeGoalResponse decomposeGoal(String userEmail, String goal, Integer targetHours) {
@@ -34,6 +44,7 @@ public class AIClientService {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-Internal-Token", internalToken);
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("user_email", userEmail);
@@ -50,8 +61,7 @@ public class AIClientService {
             List<DecomposedSubTaskResponse> fallbackTasks = List.of(
                     new DecomposedSubTaskResponse("Planning & Research: " + goal, 45, "high", "#A0785A"),
                     new DecomposedSubTaskResponse("Execution: " + goal, 90, "high", "#2563EB"),
-                    new DecomposedSubTaskResponse("Review & Testing: " + goal, 45, "medium", "#16A34A")
-            );
+                    new DecomposedSubTaskResponse("Review & Testing: " + goal, 45, "medium", "#16A34A"));
             return new DecomposeGoalResponse(userEmail, goal, 180, fallbackTasks,
                     "AI service unreachable. Generated default 3-phase execution framework.");
         }
@@ -79,6 +89,7 @@ public class AIClientService {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-Internal-Token", internalToken);
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("user_email", request.getUserEmail());
@@ -126,10 +137,17 @@ public class AIClientService {
     }
 
     public ChatProcessResponse processChatMessage(String userEmail, String message, List<TaskResponse> existingTasks) {
+        return processChatMessage(userEmail, message, existingTasks, new ArrayList<>());
+    }
+
+    public ChatProcessResponse processChatMessage(String userEmail, String message,
+            List<TaskResponse> existingTasks,
+            List<Map<String, Object>> history) {
         String endpoint = aiServiceUrl + "/chat/process";
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-Internal-Token", internalToken);
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("user_email", userEmail);
@@ -148,7 +166,7 @@ public class AIClientService {
             }
         }
         payload.put("existing_tasks", taskList);
-        payload.put("history", new ArrayList<>());
+        payload.put("history", history != null ? history : new ArrayList<>());
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(payload, headers);
 
@@ -178,5 +196,44 @@ public class AIClientService {
             }
         }
         return savedTasks;
+    }
+
+    public Map<String, Object> analyzeCoach(String userEmail, int totalTasks, int completedTasks,
+            int totalFocusMinutes) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("user_email", userEmail);
+        payload.put("total_tasks", totalTasks);
+        payload.put("completed_tasks", completedTasks);
+        payload.put("total_focus_minutes", totalFocusMinutes);
+        return postInternal("/coach/analyze", payload);
+    }
+
+    public Map<String, Object> calculateProductivity(String userEmail, List<Map<String, Object>> records,
+            int focusMinutes) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("user_email", userEmail);
+        payload.put("records", records);
+        payload.put("total_focus_minutes", focusMinutes);
+        return postInternal("/analytics/productivity-score", payload);
+    }
+
+    public Map<String, Object> decomposeAdvanced(String userEmail, String goal, double targetHours) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("user_email", userEmail);
+        payload.put("goal", goal);
+        payload.put("target_hours", targetHours);
+        return postInternal("/analytics/decompose-advanced", payload);
+    }
+
+    private Map<String, Object> postInternal(String path, Map<String, Object> payload) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-Internal-Token", internalToken);
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                aiServiceUrl + path, Objects.requireNonNull(org.springframework.http.HttpMethod.POST),
+                new HttpEntity<>(payload, headers),
+                new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {
+                });
+        return response.getBody() != null ? response.getBody() : new HashMap<>();
     }
 }

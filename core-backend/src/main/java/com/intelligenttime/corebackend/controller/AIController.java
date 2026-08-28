@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -61,11 +62,15 @@ public class AIController {
 
         // Get or create persistent conversation session
         ChatSession session = chatPersistenceService.getOrCreateSession(userEmail, sessionId);
+        List<Map<String, Object>> history = chatPersistenceService.getSessionMessages(session.getId(), userEmail)
+                .stream().map(message -> Map.<String, Object>of(
+                        "role", message.getRole(), "content", message.getContent()))
+                .toList();
         chatPersistenceService.saveMessage(session.getId(), "user", request.getMessage());
 
         List<TaskResponse> existingTasks = taskService.getUserTasks(userEmail);
         ChatProcessResponse response = aiClientService.processChatMessage(
-                userEmail, request.getMessage(), existingTasks);
+                userEmail, request.getMessage(), existingTasks, history);
 
         chatPersistenceService.saveMessage(session.getId(), "assistant", response.getAiReply());
 
@@ -98,6 +103,35 @@ public class AIController {
             Authentication authentication) {
         String userEmail = getAuthenticatedEmail(authentication);
         return ResponseEntity.ok(chatPersistenceService.getSessionMessages(sessionId, userEmail));
+    }
+
+    @PostMapping("/coach/analyze")
+    public ResponseEntity<Map<String, Object>> analyzeCoach(
+            @RequestBody Map<String, Object> request, Authentication authentication) {
+        String email = getAuthenticatedEmail(authentication);
+        return ResponseEntity.ok(aiClientService.analyzeCoach(email,
+                ((Number) request.getOrDefault("total_tasks", 0)).intValue(),
+                ((Number) request.getOrDefault("completed_tasks", 0)).intValue(),
+                ((Number) request.getOrDefault("total_focus_minutes", 0)).intValue()));
+    }
+
+    @PostMapping("/analytics/productivity-score")
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<Map<String, Object>> productivityScore(
+            @RequestBody Map<String, Object> request, Authentication authentication) {
+        String email = getAuthenticatedEmail(authentication);
+        List<Map<String, Object>> records = (List<Map<String, Object>>) request.getOrDefault("records", List.of());
+        int focus = ((Number) request.getOrDefault("total_focus_minutes", 0)).intValue();
+        return ResponseEntity.ok(aiClientService.calculateProductivity(email, records, focus));
+    }
+
+    @PostMapping("/analytics/decompose-advanced")
+    public ResponseEntity<Map<String, Object>> decomposeAdvanced(
+            @RequestBody Map<String, Object> request, Authentication authentication) {
+        String email = getAuthenticatedEmail(authentication);
+        String goal = String.valueOf(request.getOrDefault("goal", ""));
+        double hours = ((Number) request.getOrDefault("target_hours", 8)).doubleValue();
+        return ResponseEntity.ok(aiClientService.decomposeAdvanced(email, goal, hours));
     }
 
     private String getAuthenticatedEmail(Authentication authentication) {

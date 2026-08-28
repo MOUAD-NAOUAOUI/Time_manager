@@ -22,7 +22,7 @@ public class TimeSessionController {
 
     @PostMapping
     public ResponseEntity<SessionResponse> startSession(@Valid @RequestBody StartSessionRequest request,
-                                                        Authentication authentication) {
+            Authentication authentication) {
         if (authentication != null && authentication.getName() != null) {
             request.setUserEmail(authentication.getName());
         }
@@ -30,7 +30,8 @@ public class TimeSessionController {
     }
 
     @PutMapping("/{id}/stop")
-    public ResponseEntity<SessionResponse> stopSession(@PathVariable UUID id) {
-        return ResponseEntity.ok(sessionService.stopSession(id));
+    public ResponseEntity<SessionResponse> stopSession(@PathVariable UUID id,
+            Authentication authentication) {
+        return ResponseEntity.ok(sessionService.stopSession(id, authentication.getName()));
     }
 }

@@ -2,7 +2,6 @@ package com.intelligenttime.corebackend.service;
 
 import com.intelligenttime.corebackend.dto.SessionResponse;
 import com.intelligenttime.corebackend.dto.StartSessionRequest;
-import com.intelligenttime.corebackend.entity.Task;
 import com.intelligenttime.corebackend.entity.TimeSession;
 import com.intelligenttime.corebackend.entity.User;
 import com.intelligenttime.corebackend.repository.TaskRepository;
@@ -23,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@SuppressWarnings("null")
 public class TimeSessionServiceTest {
 
     @Mock
@@ -66,11 +66,16 @@ public class TimeSessionServiceTest {
         session.setId(sessionId);
         session.setStartTime(ZonedDateTime.now().minusMinutes(30));
         session.setStatus("running");
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setEmail("user@example.com");
 
         when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        session.setUser(user);
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
         when(sessionRepository.save(any(TimeSession.class))).thenAnswer(i -> i.getArgument(0));
 
-        SessionResponse response = sessionService.stopSession(sessionId);
+        SessionResponse response = sessionService.stopSession(sessionId, "user@example.com");
 
         assertNotNull(response);
         assertEquals("completed", response.getStatus());

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Clock, Brain, BarChart3, Zap, ChevronRight, Target, TrendingUp, Calendar } from "lucide-react";
 
 export default function LandingPage() {
@@ -8,9 +9,7 @@ export default function LandingPage() {
       <nav className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-[#E8E2D9]">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#A0785A] flex items-center justify-center">
-              <Clock size={16} className="text-white" />
-            </div>
+            <Image src="/images/logo/logo.webp" alt="TimeAI" width={32} height={32} className="w-8 h-8" priority />
             <span className="font-heading font-700 text-lg text-[#1A1A1A]">TimeAI</span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-[#6B7280]">
@@ -192,9 +191,7 @@ export default function LandingPage() {
       <footer className="py-8 px-6 border-t border-[#E8E2D9] bg-white">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-[#A0785A] flex items-center justify-center">
-              <Clock size={12} className="text-white" />
-            </div>
+            <Image src="/images/logo/logo.webp" alt="TimeAI" width={24} height={24} className="w-6 h-6" />
             <span className="font-heading font-600 text-sm text-[#1A1A1A]">TimeAI</span>
           </div>
           <p className="text-xs text-[#6B7280]">

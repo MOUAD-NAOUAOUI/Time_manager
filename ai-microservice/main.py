@@ -1,7 +1,9 @@
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import GROQ_API_KEY, GROQ_MODEL, PORT
+import os
 from routers import (
     schedule_router,
     coach_router,
@@ -22,8 +24,21 @@ app = FastAPI(
 
 # CORS Policy for Local Development & Internal Routing
 app.add_middleware(
+
+    @app.middleware("http")
+    async def require_internal_token(request: Request, call_next):
+        if request.url.path not in {"/", "/health", "/docs", "/openapi.json", "/redoc"}:
+            expected = os.getenv("AI_SERVICE_INTERNAL_TOKEN", "dev-internal-token")
+            if request.headers.get("X-Internal-Token") != expected:
+                return JSONResponse(status_code=401, content={"detail": "Internal service authentication required"})
+        return await call_next(request)
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@SuppressWarnings("null")
 public class SchedulePersistenceServiceTest {
 
     @Mock
@@ -98,7 +99,8 @@ public class SchedulePersistenceServiceTest {
         when(scheduleRepository.findByUserIdAndScheduleDate(user.getId(), LocalDate.now()))
                 .thenReturn(Optional.of(existing));
 
-        Optional<Schedule> result = schedulePersistenceService.getScheduleByDate("scheduler@example.com", LocalDate.now());
+        Optional<Schedule> result = schedulePersistenceService.getScheduleByDate("scheduler@example.com",
+                LocalDate.now());
         assertTrue(result.isPresent());
         assertEquals(existing.getId(), result.get().getId());
     }

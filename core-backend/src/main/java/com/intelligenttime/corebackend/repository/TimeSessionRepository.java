@@ -10,6 +10,8 @@ import java.util.UUID;
 public interface TimeSessionRepository extends JpaRepository<TimeSession, UUID> {
     List<TimeSession> findByUserId(UUID userId);
 
+    boolean existsByUserIdAndStatus(UUID userId, String status);
+
     List<TimeSession> findByTaskId(UUID taskId);
 
 }

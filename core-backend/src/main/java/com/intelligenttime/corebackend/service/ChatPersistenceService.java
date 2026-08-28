@@ -15,6 +15,7 @@ import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -52,7 +53,7 @@ public class ChatPersistenceService {
     }
 
     private ChatSession findSessionOwnedBy(UUID sessionId, String email) {
-        return sessionRepository.findById(sessionId)
+        return sessionRepository.findById(Objects.requireNonNull(sessionId))
                 .filter(s -> s.getUser().getId().equals(findUserByEmail(email).getId()))
                 .orElseThrow(() -> new ResourceNotFoundException("Chat session not found: " + sessionId));
     }
@@ -98,7 +99,7 @@ public class ChatPersistenceService {
     public List<TaskResponse> confirmProposal(UUID proposalId, String email) {
         User user = findUserByEmail(email);
 
-        ChatProposal proposal = proposalRepository.findById(proposalId)
+        ChatProposal proposal = proposalRepository.findById(Objects.requireNonNull(proposalId))
                 .orElseThrow(() -> new ResourceNotFoundException("Proposal not found: " + proposalId));
 
         if (!proposal.getUser().getId().equals(user.getId())) {
@@ -135,7 +136,7 @@ public class ChatPersistenceService {
     }
 
     private ChatSession findSession(UUID sessionId) {
-        return sessionRepository.findById(sessionId)
+        return sessionRepository.findById(Objects.requireNonNull(sessionId))
                 .orElseThrow(() -> new ResourceNotFoundException("Session not found: " + sessionId));
     }
 

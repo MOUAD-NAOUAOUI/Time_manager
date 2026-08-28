@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   Plus,
   Clock,
@@ -16,11 +18,10 @@ import {
   Layers,
   History,
   MessageSquare,
-  Target,
   Check,
   Calendar
 } from "lucide-react";
-import { API_URL, AI_API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
+import { API_URL, fetchWithAuth, getUserEmail, logout } from "@/lib/api";
 
 interface Task {
   id: string;
@@ -69,14 +70,6 @@ interface ChatSessionItem {
   updatedAt: string;
 }
 
-interface MilestonePhase {
-  phase_number: number;
-  name: string;
-  estimated_hours: number;
-  tasks: string[];
-  dependencies: number[];
-}
-
 interface AdvancedGoalPlan {
   user_email: string;
   goal: string;
@@ -95,6 +88,7 @@ interface AdvancedGoalPlan {
 const COLORS = ["#A0785A", "#16A34A", "#D97706", "#2563EB", "#9333EA", "#DC2626", "#0891B2"];
 
 export default function TasksPage() {
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -131,7 +125,7 @@ export default function TasksPage() {
     fetchWithAuth(`${API_URL}/tasks`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => Array.isArray(d) && setTasks(d))
-      .catch(() => {});
+      .catch(() => { });
   };
 
   useEffect(() => {
@@ -179,7 +173,7 @@ export default function TasksPage() {
     fetchWithAuth(`${API_URL}/ai/chat/sessions`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => Array.isArray(d) && setSessions(d))
-      .catch(() => {});
+      .catch(() => { });
   };
 
   useEffect(() => {
@@ -207,14 +201,14 @@ export default function TasksPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setAiReply(data.ai_reply || "I analyzed your request and prepared this plan:");
+        setAiReply(data.ai_reply || data.aiReply || (data.proposal ? "I analyzed your request and prepared this plan:" : "I received your message. Let me know what specific tasks you would like to schedule!"));
         setProposal(data.proposal || null);
         fetchSessions();
       } else {
         alert("Failed to analyze prompt. Please try again.");
       }
-    } catch (err: any) {
-      alert("AI Assistant Error: " + err.message);
+    } catch (err: unknown) {
+      alert("AI Assistant Error: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setAiLoading(false);
     }
@@ -238,8 +232,8 @@ export default function TasksPage() {
       } else {
         alert("Failed to save tasks. Please try again.");
       }
-    } catch (err: any) {
-      alert("Error saving tasks: " + err.message);
+    } catch (err: unknown) {
+      alert("Error saving tasks: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setConfirming(false);
     }
@@ -253,7 +247,7 @@ export default function TasksPage() {
     setGoalPlan(null);
 
     try {
-      const res = await fetch(`${AI_API_URL}/analytics/decompose-advanced`, {
+      const res = await fetchWithAuth(`${API_URL}/ai/analytics/decompose-advanced`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -268,8 +262,8 @@ export default function TasksPage() {
       } else {
         alert("Failed to decompose goal. Please try again.");
       }
-    } catch (err: any) {
-      alert("Decomposer Error: " + err.message);
+    } catch (err: unknown) {
+      alert("Decomposer Error: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setDecomposing(false);
     }
@@ -303,8 +297,8 @@ export default function TasksPage() {
       setGoalText("");
       setGoalPlan(null);
       fetchTasks();
-    } catch (err: any) {
-      alert("Error saving goal tasks: " + err.message);
+    } catch (err: unknown) {
+      alert("Error saving goal tasks: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSavingPlan(false);
     }
@@ -315,24 +309,21 @@ export default function TasksPage() {
       {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
         <div className="flex items-center gap-2 px-2 mb-8">
-          <div className="w-8 h-8 rounded-lg bg-[#A0785A] flex items-center justify-center">
-            <Clock size={15} className="text-white" />
-          </div>
+          <Image src="/images/logo/logo.webp" alt="TimeAI" width={32} height={32} className="w-8 h-8" priority />
           <span className="font-heading font-700 text-[#1A1A1A]">TimeAI</span>
         </div>
         {[
           { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-          { href: "/tasks",     label: "Tasks",     icon: CheckCircle2 },
-          { href: "/schedule",  label: "Schedule",  icon: Calendar },
+          { href: "/tasks", label: "Tasks", icon: CheckCircle2 },
+          { href: "/schedule", label: "Schedule", icon: Calendar },
         ].map((l) => (
           <Link
             key={l.href}
             href={l.href}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              l.label === "Tasks"
-                ? "bg-[#F5EFE8] text-[#A0785A]"
-                : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
-            }`}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${l.label === "Tasks"
+              ? "bg-[#F5EFE8] text-[#A0785A]"
+              : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
+              }`}
           >
             <l.icon size={16} />
             {l.label}
@@ -340,10 +331,7 @@ export default function TasksPage() {
         ))}
         <div className="mt-auto">
           <button
-            onClick={() => {
-              localStorage.clear();
-              window.location.href = "/auth/login";
-            }}
+            onClick={() => logout(router.push)}
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[#6B7280] hover:text-[#DC2626] hover:bg-red-50 transition-all w-full"
           >
             <LogOut size={16} /> Sign out
@@ -480,21 +468,19 @@ export default function TasksPage() {
               <div className="flex border-b border-[#E8E2D9] mb-4 gap-4 text-xs font-semibold">
                 <button
                   onClick={() => setAiTab("prompt")}
-                  className={`pb-2 flex items-center gap-1.5 border-b-2 transition-all ${
-                    aiTab === "prompt"
-                      ? "border-[#A0785A] text-[#A0785A]"
-                      : "border-transparent text-[#6B7280] hover:text-[#1A1A1A]"
-                  }`}
+                  className={`pb-2 flex items-center gap-1.5 border-b-2 transition-all ${aiTab === "prompt"
+                    ? "border-[#A0785A] text-[#A0785A]"
+                    : "border-transparent text-[#6B7280] hover:text-[#1A1A1A]"
+                    }`}
                 >
                   <MessageSquare size={14} /> Prompt Assistant
                 </button>
                 <button
                   onClick={() => setAiTab("decomposer")}
-                  className={`pb-2 flex items-center gap-1.5 border-b-2 transition-all ${
-                    aiTab === "decomposer"
-                      ? "border-[#A0785A] text-[#A0785A]"
-                      : "border-transparent text-[#6B7280] hover:text-[#1A1A1A]"
-                  }`}
+                  className={`pb-2 flex items-center gap-1.5 border-b-2 transition-all ${aiTab === "decomposer"
+                    ? "border-[#A0785A] text-[#A0785A]"
+                    : "border-transparent text-[#6B7280] hover:text-[#1A1A1A]"
+                    }`}
                 >
                   <Layers size={14} /> Sprint Goal Decomposer
                 </button>
@@ -541,14 +527,16 @@ export default function TasksPage() {
                     </button>
                   </form>
 
+                  {/* AI Reply Bubble */}
+                  {aiReply && (
+                    <div className="p-3.5 rounded-xl bg-[#F5EFE8] text-sm text-[#7D5C42] font-medium leading-relaxed border border-[#A0785A]/20">
+                      {aiReply}
+                    </div>
+                  )}
+
                   {/* AI Analysis & Proposal Card */}
-                  {proposal && (
+                  {proposal && proposal.extracted_tasks && proposal.extracted_tasks.length > 0 && (
                     <div className="space-y-4 pt-2 border-t border-[#E8E2D9]">
-                      {aiReply && (
-                        <div className="p-3.5 rounded-xl bg-[#F5EFE8] text-sm text-[#7D5C42] font-medium leading-relaxed">
-                          🤖 {aiReply}
-                        </div>
-                      )}
 
                       {/* Impact Analysis Banner */}
                       {proposal.impact_analysis && (
@@ -604,11 +592,10 @@ export default function TasksPage() {
                                   <Clock size={12} /> {task.estimated_minutes}m
                                 </span>
                                 <span
-                                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                                    task.priority === "high"
-                                      ? "bg-red-50 text-[#DC2626]"
-                                      : "bg-[#F5EFE8] text-[#A0785A]"
-                                  }`}
+                                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${task.priority === "high"
+                                    ? "bg-red-50 text-[#DC2626]"
+                                    : "bg-[#F5EFE8] text-[#A0785A]"
+                                    }`}
                                 >
                                   {task.priority}
                                 </span>
@@ -717,7 +704,7 @@ export default function TasksPage() {
                             </div>
                             {phase.dependencies.length > 0 && (
                               <p className="text-[10px] text-gray-400 mt-3 pt-2 border-t border-[#E8E2D9]">
-                                🔒 Unlocks after Phase {phase.dependencies.join(", ")}
+                                Unlocks after Phase {phase.dependencies.join(", ")}
                               </p>
                             )}
                           </div>
@@ -789,9 +776,8 @@ export default function TasksPage() {
                   </button>
                   <div className="flex-1 min-w-0">
                     <p
-                      className={`text-sm font-medium ${
-                        task.status === "completed" ? "line-through text-[#6B7280]" : "text-[#1A1A1A]"
-                      }`}
+                      className={`text-sm font-medium ${task.status === "completed" ? "line-through text-[#6B7280]" : "text-[#1A1A1A]"
+                        }`}
                     >
                       {task.title}
                     </p>
@@ -800,11 +786,10 @@ export default function TasksPage() {
                         <Clock size={10} /> {task.estimatedMinutes}m
                       </span>
                       <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          task.status === "completed"
-                            ? "bg-green-50 text-[#16A34A]"
-                            : "bg-[#F5EFE8] text-[#A0785A]"
-                        }`}
+                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${task.status === "completed"
+                          ? "bg-green-50 text-[#16A34A]"
+                          : "bg-[#F5EFE8] text-[#A0785A]"
+                          }`}
                       >
                         {task.status}
                       </span>

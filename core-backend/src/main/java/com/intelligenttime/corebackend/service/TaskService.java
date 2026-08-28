@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -33,9 +34,18 @@ public class TaskService {
         Task task = new Task();
         task.setUser(user);
         task.setTitle(request.getTitle());
-        if (request.getColor() != null)             task.setColor(request.getColor());
-        if (request.getEstimatedMinutes() != null)  task.setEstimatedMinutes(request.getEstimatedMinutes());
-        if (request.getDeadline() != null)          task.setDeadline(request.getDeadline());
+        if (request.getColor() != null)
+            task.setColor(request.getColor());
+        if (request.getEstimatedMinutes() != null)
+            task.setEstimatedMinutes(request.getEstimatedMinutes());
+        if (request.getDeadline() != null)
+            task.setDeadline(request.getDeadline());
+        if (request.getPriority() != null)
+            task.setPriority(request.getPriority());
+        if (request.getEnergyRequired() != null)
+            task.setEnergyRequired(request.getEnergyRequired());
+        if (request.getCategory() != null)
+            task.setCategory(request.getCategory());
         return mapToResponse(taskRepository.save(task));
     }
 
@@ -49,7 +59,7 @@ public class TaskService {
 
     @Transactional
     public TaskResponse updateStatus(UUID taskId, String email, UpdateTaskStatusRequest request) {
-        Task task = taskRepository.findById(taskId)
+        Task task = taskRepository.findById(Objects.requireNonNull(taskId))
                 .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
 
         User user = findUserByEmail(email);
@@ -80,7 +90,10 @@ public class TaskService {
                 task.getEstimatedMinutes(),
                 task.getDeadline(),
                 task.getStatus(),
-                task.getCreatedAt()
-        );
+                task.getCreatedAt(),
+                task.getActualMinutesSpent(),
+                task.getPriority(),
+                task.getEnergyRequired(),
+                task.getCategory());
     }
 }

@@ -1,10 +1,13 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { Clock, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
+import { Eye, EyeOff, ArrowRight } from "lucide-react";
 import { API_URL } from "@/lib/api";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ email: "", password: "", timezone: "UTC" });
@@ -23,13 +26,13 @@ export default function RegisterPage() {
         localStorage.setItem("token", data.token);
         localStorage.setItem("email", data.email || form.email);
         document.cookie = `auth_token=${data.token}; path=/; SameSite=Strict; max-age=86400`;
-        window.location.href = "/dashboard";
+        router.push("/dashboard");
       } else {
         const err = await res.json();
         alert(err.message || "Registration failed. Email may already be in use.");
       }
-    } catch (err: any) {
-      alert("Registration Connection Error: " + err.message);
+    } catch (err: unknown) {
+      alert("Registration Connection Error: " + (err instanceof Error ? err.message : String(err)));
       console.error("Fetch error details:", err);
     } finally {
       setLoading(false);
@@ -41,9 +44,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-10">
-          <div className="w-9 h-9 rounded-xl bg-[#A0785A] flex items-center justify-center shadow-lg shadow-[#A0785A]/30">
-            <Clock size={18} className="text-white" />
-          </div>
+          <Image src="/images/logo/logo.webp" alt="TimeAI" width={36} height={36} className="w-9 h-9 rounded-xl shadow-lg shadow-[#A0785A]/30" priority />
           <span className="font-heading font-700 text-xl text-[#1A1A1A]">TimeAI</span>
         </div>
 

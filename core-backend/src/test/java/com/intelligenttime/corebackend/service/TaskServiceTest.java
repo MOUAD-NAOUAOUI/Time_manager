@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@SuppressWarnings("null")
 public class TaskServiceTest {
 
     @Mock
@@ -130,8 +131,7 @@ public class TaskServiceTest {
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
         when(userRepository.findByEmail("other@example.com")).thenReturn(Optional.of(otherUser));
 
-        assertThrows(UnauthorizedException.class, () ->
-                taskService.updateStatus(taskId, "other@example.com", request));
+        assertThrows(UnauthorizedException.class, () -> taskService.updateStatus(taskId, "other@example.com", request));
     }
 
     @Test
@@ -142,7 +142,7 @@ public class TaskServiceTest {
 
         when(taskRepository.findById(taskId)).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () ->
-                taskService.updateStatus(taskId, "test@example.com", request));
+        assertThrows(ResourceNotFoundException.class,
+                () -> taskService.updateStatus(taskId, "test@example.com", request));
     }
 }

@@ -389,6 +389,12 @@ The objective is to build a product that could realistically serve thousands (or
 # PROJECT VISION & REQUIREMENT ANALYSIS
 *Status: done*
 
+**Current MVP boundary:** Email/password authentication, task and time tracking,
+AI scheduling, AI task assistance, persistence, and dashboard analytics are the
+current implementation target. OAuth, external calendar synchronization,
+production deployment, monitoring, performance testing, and end-to-end testing
+remain explicitly deferred until the MVP integration gate is complete.
+
 **Core Concept:** Intelligent Time Manager
 
 An AI-driven, highly visual time management system that goes beyond traditional scheduling. It actively tracks user performance, analyzes habits, and uses AI to intelligently schedule tasks, identify weaknesses, and recommend actionable improvements.

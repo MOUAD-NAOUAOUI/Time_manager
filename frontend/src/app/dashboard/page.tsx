@@ -1,16 +1,17 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend,
 } from "recharts";
 import {
   Clock, CheckCircle2, Target, Zap, Plus, Play, Square,
-  BarChart3, Brain, LogOut, ChevronRight, Award, Activity,
-  Sparkles, TrendingUp, AlertCircle
+  BarChart3, Brain, LogOut, ChevronRight, Award
 } from "lucide-react";
-import { API_URL, AI_API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
+import { API_URL, fetchWithAuth, getUserEmail, logout } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Task {
@@ -58,28 +59,26 @@ const BRAND = "#A0785A";
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
 function Sidebar({ active }: { active: string }) {
+  const router = useRouter();
   const links = [
     { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
-    { href: "/tasks",     label: "Tasks",     icon: CheckCircle2 },
-    { href: "/schedule",  label: "Schedule",  icon: Clock },
+    { href: "/tasks", label: "Tasks", icon: CheckCircle2 },
+    { href: "/schedule", label: "Schedule", icon: Clock },
   ];
   return (
     <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
       <div className="flex items-center gap-2 px-2 mb-8">
-        <div className="w-8 h-8 rounded-lg bg-[#A0785A] flex items-center justify-center">
-          <Clock size={15} className="text-white" />
-        </div>
+        <Image src="/images/logo/logo.webp" alt="TimeAI" width={32} height={32} className="w-8 h-8" priority />
         <span className="font-heading font-700 text-[#1A1A1A]">TimeAI</span>
       </div>
       {links.map((l) => (
         <Link
           key={l.href}
           href={l.href}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-            active === l.label
-              ? "bg-[#F5EFE8] text-[#A0785A]"
-              : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
-          }`}
+          className={`flex items - center gap - 3 px - 3 py - 2.5 rounded - xl text - sm font - medium transition - all ${active === l.label
+            ? "bg-[#F5EFE8] text-[#A0785A]"
+            : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
+            }`}
         >
           <l.icon size={16} />
           {l.label}
@@ -87,7 +86,7 @@ function Sidebar({ active }: { active: string }) {
       ))}
       <div className="mt-auto">
         <button
-          onClick={() => { localStorage.clear(); window.location.href = "/auth/login"; }}
+          onClick={() => logout(router.push)}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[#6B7280] hover:text-[#DC2626] hover:bg-red-50 transition-all w-full"
         >
           <LogOut size={16} /> Sign out
@@ -131,21 +130,21 @@ export default function DashboardPage() {
 
   // Fetch analytics + tasks on mount
   useEffect(() => {
-    fetchWithAuth(`${API_URL}/analytics/dashboard`)
+    fetchWithAuth(`${API_URL} / analytics / dashboard`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setAnalytics(d))
-      .catch(() => {});
+      .catch(() => { });
 
-    fetchWithAuth(`${API_URL}/tasks`)
+    fetchWithAuth(`${API_URL} / tasks`)
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setTasks(d))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Fetch AI coaching & Productivity Score after analytics/tasks loaded
   useEffect(() => {
     if (!analytics) return;
-    fetch(`${AI_API_URL}/coach/analyze`, {
+    fetchWithAuth(`${API_URL}/ai/coach/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -157,19 +156,19 @@ export default function DashboardPage() {
     })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setCoach(d))
-      .catch(() => {});
+      .catch(() => { });
 
     // Compute Advanced Productivity Score
     const records = tasks.map(t => ({
       title: t.title,
       estimated_minutes: t.estimatedMinutes || 30,
-      actual_minutes: t.status === "completed" ? (t.estimatedMinutes || 30) : null,
+      actual_minutes: t.status === "completed" ? (t as Task & { actualMinutesSpent?: number }).actualMinutesSpent : null,
       status: t.status,
-      priority: "medium",
-      energy_required: "medium"
+      priority: (t as Task & { priority?: string }).priority || "medium",
+      energy_required: (t as Task & { energyRequired?: string }).energyRequired || "medium"
     }));
 
-    fetch(`${AI_API_URL}/analytics/productivity-score`, {
+    fetchWithAuth(`${API_URL}/ai/analytics/productivity-score`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -180,7 +179,7 @@ export default function DashboardPage() {
     })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setAssessment(d))
-      .catch(() => {});
+      .catch(() => { });
   }, [analytics, tasks, email]);
 
   // Live timer tick
@@ -192,7 +191,7 @@ export default function DashboardPage() {
 
   const startSession = async (task: Task) => {
     try {
-      const res = await fetchWithAuth(`${API_URL}/sessions`, {
+      const res = await fetchWithAuth(`${API_URL} / sessions`, {
         method: "POST",
         body: JSON.stringify({ userEmail: email, taskId: task.id }),
       });
@@ -208,34 +207,34 @@ export default function DashboardPage() {
   const stopSession = async () => {
     if (!sessionId) return;
     try {
-      await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
+      await fetchWithAuth(`${API_URL} / sessions / ${sessionId} / stop`, { method: "PUT" });
     } catch { /* offline */ }
     setActiveSession(null);
     setSessionId(null);
   };
 
   const fmtTime = (s: number) =>
-    `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+    `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")} `;
 
   // Pie chart data from real tasks
   const pieData = tasks.length
     ? [
-        { name: "Completed", value: analytics?.completedTasks || 0, color: "#16A34A" },
-        { name: "Pending",   value: analytics?.pendingTasks   || 0, color: BRAND },
-      ]
+      { name: "Completed", value: analytics?.completedTasks || 0, color: "#16A34A" },
+      { name: "Pending", value: analytics?.pendingTasks || 0, color: BRAND },
+    ]
     : [{ name: "No data", value: 1, color: "#E8E2D9" }];
 
   const liveChartData = (analytics?.weeklyMetrics && analytics.weeklyMetrics.length > 0)
     ? analytics.weeklyMetrics
     : [
-        { day: "Mon", focus: 0, tasks: 0 },
-        { day: "Tue", focus: 0, tasks: 0 },
-        { day: "Wed", focus: 0, tasks: 0 },
-        { day: "Thu", focus: 0, tasks: 0 },
-        { day: "Fri", focus: 0, tasks: 0 },
-        { day: "Sat", focus: 0, tasks: 0 },
-        { day: "Sun", focus: 0, tasks: 0 },
-      ];
+      { day: "Mon", focus: 0, tasks: 0 },
+      { day: "Tue", focus: 0, tasks: 0 },
+      { day: "Wed", focus: 0, tasks: 0 },
+      { day: "Thu", focus: 0, tasks: 0 },
+      { day: "Fri", focus: 0, tasks: 0 },
+      { day: "Sat", focus: 0, tasks: 0 },
+      { day: "Sun", focus: 0, tasks: 0 },
+    ];
 
   return (
     <div className="flex min-h-screen bg-[#FAFAF8]">
@@ -259,10 +258,10 @@ export default function DashboardPage() {
         <main className="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
           {/* ── Stat Cards ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard icon={Target}       label="Total Tasks"     value={analytics?.totalTasks || 0}         sub="all time" />
-            <StatCard icon={CheckCircle2} label="Completed"       value={analytics?.completedTasks || 0}     sub="tasks done" color="#16A34A" />
-            <StatCard icon={Clock}        label="Focus Time"      value={`${analytics?.totalFocusMinutes || 0}m`} sub="total tracked" color="#D97706" />
-            <StatCard icon={Zap}          label="Completion Rate" value={`${analytics?.completionRate?.toFixed(0) || 0}%`} sub="of tasks done" color="#A0785A" />
+            <StatCard icon={Target} label="Total Tasks" value={analytics?.totalTasks || 0} sub="all time" />
+            <StatCard icon={CheckCircle2} label="Completed" value={analytics?.completedTasks || 0} sub="tasks done" color="#16A34A" />
+            <StatCard icon={Clock} label="Focus Time" value={`${analytics?.totalFocusMinutes || 0} m`} sub="total tracked" color="#D97706" />
+            <StatCard icon={Zap} label="Completion Rate" value={`${analytics?.completionRate?.toFixed(0) || 0}% `} sub="of tasks done" color="#A0785A" />
           </div>
 
           {/* ── Charts Row (Live Real Database Metrics) ── */}
@@ -368,11 +367,10 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-[11px] text-[#6B7280]">Burnout Risk</p>
-                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize ${
-                      assessment.burnout_risk === "low" ? "bg-green-50 text-[#16A34A] border border-green-200" :
+                    <span className={`text - xs font - semibold px - 2.5 py - 0.5 rounded - full capitalize ${assessment.burnout_risk === "low" ? "bg-green-50 text-[#16A34A] border border-green-200" :
                       assessment.burnout_risk === "moderate" ? "bg-amber-50 text-[#D97706] border border-amber-200" :
-                      "bg-red-50 text-[#DC2626] border border-red-200"
-                    }`}>
+                        "bg-red-50 text-[#DC2626] border border-red-200"
+                      } `}>
                       {assessment.burnout_risk}
                     </span>
                   </div>

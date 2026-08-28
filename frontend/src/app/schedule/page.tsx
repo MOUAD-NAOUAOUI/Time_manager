@@ -1,6 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   Calendar,
   Clock,
@@ -14,7 +16,7 @@ import {
   Award,
   Sparkles,
 } from "lucide-react";
-import { API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
+import { API_URL, fetchWithAuth, getUserEmail, logout } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,30 +58,31 @@ const formatHour = (hour: number): string => {
 
 const PRIORITY_BADGE: Record<string, string> = {
   critical: "bg-red-50 text-[#DC2626] border-red-200",
-  high:     "bg-orange-50 text-[#EA580C] border-orange-200",
-  medium:   "bg-amber-50 text-[#D97706] border-amber-200",
-  low:      "bg-green-50 text-[#16A34A] border-green-200",
+  high: "bg-orange-50 text-[#EA580C] border-orange-200",
+  medium: "bg-amber-50 text-[#D97706] border-amber-200",
+  low: "bg-green-50 text-[#16A34A] border-green-200",
 };
 
 const ENERGY_ICON: Record<string, string> = {
-  high:   "⚡⚡⚡",
-  medium: "⚡⚡",
-  low:    "⚡",
+  high: "H",
+  medium: "M",
+  low: "L",
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function SchedulePage() {
+  const router = useRouter();
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState("");
-  const [tooltip, setTooltip]   = useState<{ block: TimeBlock; x: number; y: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [tooltip, setTooltip] = useState<{ block: TimeBlock; x: number; y: number } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
 
   const START_HOUR = 6;
-  const END_HOUR   = 22;
+  const END_HOUR = 22;
   const TOTAL_MINS = (END_HOUR - START_HOUR) * 60;
   const PIXELS_PER_MIN = 2; // 2px per minute
 
@@ -87,7 +90,7 @@ export default function SchedulePage() {
 
   // ─── Data Fetching ──────────────────────────────────────────────────────────
 
-  const loadSchedule = async () => {
+  const loadSchedule = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -101,22 +104,14 @@ export default function SchedulePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [today]);
 
   const generateSchedule = async () => {
     setGenerating(true);
     setError("");
     try {
-      const email = getUserEmail();
-      const res = await fetchWithAuth(`${API_URL}/schedule/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userEmail:  email,
-          date:       today,
-          startHour:  START_HOUR,
-          endHour:    END_HOUR,
-        }),
+      const res = await fetchWithAuth(`${API_URL}/schedule/today?startHour=${START_HOUR}&endHour=${END_HOUR}`, {
+        method: "GET",
       });
       if (!res.ok) throw new Error(await res.text());
       const data: ScheduleData = await res.json();
@@ -149,8 +144,10 @@ export default function SchedulePage() {
   };
 
   useEffect(() => {
+    // The loader synchronizes the page with the persisted schedule.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSchedule();
-  }, []);
+  }, [loadSchedule]);
 
   // ─── Block position helpers ─────────────────────────────────────────────────
 
@@ -167,25 +164,22 @@ export default function SchedulePage() {
       {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
         <div className="flex items-center gap-2 px-2 mb-8">
-          <div className="w-8 h-8 rounded-lg bg-[#A0785A] flex items-center justify-center">
-            <Clock size={15} className="text-white" />
-          </div>
+          <Image src="/images/logo/logo.webp" alt="TimeAI" width={32} height={32} className="w-8 h-8" priority />
           <span className="font-heading font-700 text-[#1A1A1A]">TimeAI</span>
         </div>
 
         {[
           { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-          { href: "/tasks",     icon: CheckCircle2,    label: "Tasks" },
-          { href: "/schedule",  icon: Calendar,        label: "Schedule", active: true },
+          { href: "/tasks", icon: CheckCircle2, label: "Tasks" },
+          { href: "/schedule", icon: Calendar, label: "Schedule", active: true },
         ].map(({ href, icon: Icon, label, active }) => (
           <Link
             key={href}
             href={href}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              active
-                ? "bg-[#F5EFE8] text-[#A0785A]"
-                : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
-            }`}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${active
+              ? "bg-[#F5EFE8] text-[#A0785A]"
+              : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
+              }`}
           >
             <Icon size={16} />
             {label}
@@ -194,7 +188,7 @@ export default function SchedulePage() {
 
         <div className="mt-auto">
           <button
-            onClick={() => { localStorage.clear(); window.location.href = "/auth/login"; }}
+            onClick={() => logout(router.push)}
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[#6B7280] hover:text-[#DC2626] hover:bg-red-50 transition-all w-full"
           >
             <LogOut size={16} />
@@ -373,12 +367,11 @@ export default function SchedulePage() {
                       e.stopPropagation();
                       setTooltip({ block, x: e.clientX, y: e.clientY });
                     }}
-                    className={`absolute left-2 right-2 rounded-xl px-3 py-1.5 text-left text-white shadow-md hover:scale-[1.005] active:scale-[0.995] transition-all border border-white/20 overflow-hidden ${
-                      isCompleted ? "opacity-40 grayscale" : ""
-                    }`}
+                    className={`absolute left-2 right-2 rounded-xl px-3 py-1.5 text-left text-white shadow-md hover:scale-[1.005] active:scale-[0.995] transition-all border border-white/20 overflow-hidden ${isCompleted ? "opacity-40 grayscale" : ""
+                      }`}
                     style={{
-                      top:             blockTop(block.startTime),
-                      height:          blockHeight(block.startTime, block.endTime),
+                      top: blockTop(block.startTime),
+                      height: blockHeight(block.startTime, block.endTime),
                       backgroundColor: block.color || "#A0785A",
                     }}
                   >
@@ -392,7 +385,7 @@ export default function SchedulePage() {
                       {block.startTime} – {block.endTime}
                     </p>
                     <div className="absolute top-1.5 right-2 text-[10px]">
-                      {ENERGY_ICON[block.energyRequired] ?? "⚡"}
+                      {ENERGY_ICON[block.energyRequired] ?? "-"}
                     </div>
                   </button>
                 );
@@ -436,7 +429,7 @@ export default function SchedulePage() {
             </div>
             {tooltip.block.constraintReason && (
               <p className="mt-2 text-xs text-[#7D5C42] bg-[#F5EFE8] p-2 rounded-lg italic leading-snug">
-                💡 {tooltip.block.constraintReason}
+                {tooltip.block.constraintReason}
               </p>
             )}
 

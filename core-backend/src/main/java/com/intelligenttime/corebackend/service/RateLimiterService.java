@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.Objects;
 
 @Service
 public class RateLimiterService {
@@ -41,20 +42,21 @@ public class RateLimiterService {
         long remainingLockout = getRemainingLockout(key);
         if (remainingLockout > 0) {
             throw new TooManyRequestsException(
-                    "Too many failed attempts. Account temporarily locked. Please try again in " + remainingLockout + " seconds.",
-                    remainingLockout
-            );
+                    "Too many failed attempts. Account temporarily locked. Please try again in " + remainingLockout
+                            + " seconds.",
+                    remainingLockout);
         }
     }
 
     public void recordFailure(String key) {
+        String safeKey = Objects.requireNonNull(key, "key");
         try {
             if (redisTemplate != null) {
-                Long attempts = redisTemplate.opsForValue().increment(key);
+                Long attempts = redisTemplate.opsForValue().increment(safeKey);
                 if (attempts != null && attempts == 1) {
-                    redisTemplate.expire(key, windowSeconds, TimeUnit.SECONDS);
+                    redisTemplate.expire(safeKey, windowSeconds, TimeUnit.SECONDS);
                 } else if (attempts != null && attempts >= maxAttempts) {
-                    redisTemplate.expire(key, lockoutSeconds, TimeUnit.SECONDS);
+                    redisTemplate.expire(safeKey, lockoutSeconds, TimeUnit.SECONDS);
                 }
                 return;
             }
@@ -66,7 +68,7 @@ public class RateLimiterService {
 
         // In-memory fallback
         long now = System.currentTimeMillis();
-        fallbackCache.compute(key, (k, record) -> {
+        fallbackCache.compute(safeKey, (k, record) -> {
             if (record == null || now > record.expiryTime) {
                 return new AttemptRecord(1, now + (windowSeconds * 1000));
             }
@@ -79,26 +81,28 @@ public class RateLimiterService {
     }
 
     public void resetLimit(String key) {
+        String safeKey = Objects.requireNonNull(key, "key");
         try {
             if (redisTemplate != null) {
-                redisTemplate.delete(key);
+                redisTemplate.delete(safeKey);
             }
         } catch (Exception e) {
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("Redis operation failed for resetLimit: {}", e.getMessage());
             }
         }
-        fallbackCache.remove(key);
+        fallbackCache.remove(safeKey);
     }
 
     public long getRemainingLockout(String key) {
+        String safeKey = Objects.requireNonNull(key, "key");
         try {
             if (redisTemplate != null) {
-                String val = redisTemplate.opsForValue().get(key);
+                String val = redisTemplate.opsForValue().get(safeKey);
                 if (val != null) {
                     int count = Integer.parseInt(val);
                     if (count >= maxAttempts) {
-                        Long expire = redisTemplate.getExpire(key, TimeUnit.SECONDS);
+                        Long expire = redisTemplate.getExpire(safeKey, TimeUnit.SECONDS);
                         return (expire != null && expire > 0) ? expire : 0;
                     }
                 }
@@ -106,11 +110,12 @@ public class RateLimiterService {
             }
         } catch (Exception e) {
             if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Redis operation failed for getRemainingLockout, falling back to in-memory: {}", e.getMessage());
+                LOGGER.debug("Redis operation failed for getRemainingLockout, falling back to in-memory: {}",
+                        e.getMessage());
             }
         }
 
-        AttemptRecord record = fallbackCache.get(key);
+        AttemptRecord record = fallbackCache.get(safeKey);
         if (record != null) {
             long now = System.currentTimeMillis();
             if (now < record.expiryTime && record.count >= maxAttempts) {

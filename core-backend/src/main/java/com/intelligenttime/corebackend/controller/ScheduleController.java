@@ -8,7 +8,6 @@ import com.intelligenttime.corebackend.dto.TaskResponse;
 import com.intelligenttime.corebackend.dto.TimeBlockResponse;
 import com.intelligenttime.corebackend.entity.Schedule;
 import com.intelligenttime.corebackend.entity.ScheduleTimeBlock;
-import com.intelligenttime.corebackend.exception.ResourceNotFoundException;
 import com.intelligenttime.corebackend.service.AIClientService;
 import com.intelligenttime.corebackend.service.SchedulePersistenceService;
 import com.intelligenttime.corebackend.service.TaskService;
@@ -42,10 +41,11 @@ public class ScheduleController {
     public ResponseEntity<ScheduleResponse> generateSchedule(
             @Valid @RequestBody ScheduleRequest request,
             Authentication authentication) {
-        String email = (authentication != null && authentication.getName() != null)
-                ? authentication.getName()
-                : request.getUserEmail();
+        String email = authentication.getName();
         request.setUserEmail(email);
+        if (request.getTasks() == null || request.getTasks().isEmpty()) {
+            request.setTasks(mapToScheduleTaskItems(taskService.getUserTasks(email)));
+        }
 
         ScheduleResponse response = aiClientService.generateSchedule(request);
 
@@ -54,8 +54,7 @@ public class ScheduleController {
             schedulePersistenceService.saveOrUpdateSchedule(
                     email, targetDate, response,
                     request.getStartHour(),
-                    request.getEndHour()
-            );
+                    request.getEndHour());
         }
 
         return ResponseEntity.ok(response);
@@ -80,8 +79,7 @@ public class ScheduleController {
 
         if (userEmail != null && !userEmail.isBlank()) {
             schedulePersistenceService.saveOrUpdateSchedule(
-                    userEmail, LocalDate.now(), response, startHour, endHour
-            );
+                    userEmail, LocalDate.now(), response, startHour, endHour);
         }
 
         return ResponseEntity.ok(response);
@@ -96,8 +94,8 @@ public class ScheduleController {
                     item.setTitle(t.getTitle());
                     item.setEstimatedMinutes(t.getEstimatedMinutes() != null ? t.getEstimatedMinutes() : 30);
                     item.setColor(t.getColor());
-                    item.setPriority("medium");
-                    item.setEnergyRequired("medium");
+                    item.setPriority(t.getPriority() != null ? t.getPriority() : "medium");
+                    item.setEnergyRequired(t.getEnergyRequired() != null ? t.getEnergyRequired() : "medium");
                     if (t.getDeadline() != null) {
                         item.setDeadline(t.getDeadline().toString());
                     }
@@ -112,13 +110,24 @@ public class ScheduleController {
             @RequestParam String date,
             Authentication authentication) {
 
-        String resolvedEmail = (authentication != null && authentication.getName() != null)
-                ? authentication.getName()
-                : email;
+        String resolvedEmail = authentication.getName();
 
         LocalDate localDate = LocalDate.parse(date);
         Schedule schedule = schedulePersistenceService.getScheduleByDate(resolvedEmail, localDate)
-                .orElseThrow(() -> new ResourceNotFoundException("No schedule found for date: " + date));
+                .orElse(null);
+
+        if (schedule == null) {
+            ScheduleResponse emptyResponse = new ScheduleResponse();
+            emptyResponse.setUserEmail(resolvedEmail);
+            emptyResponse.setSchedule(new java.util.ArrayList<>());
+            emptyResponse.setRecommendation("No schedule planned for this date yet.");
+            ScheduleMetrics metrics = new ScheduleMetrics();
+            metrics.setTotalPlannedMinutes(0);
+            metrics.setUtilizationPercent(0.0);
+            metrics.setOverloadWarning(false);
+            emptyResponse.setMetrics(metrics);
+            return ResponseEntity.ok(emptyResponse);
+        }
 
         return ResponseEntity.ok(mapScheduleToResponse(schedule));
     }
@@ -131,15 +140,16 @@ public class ScheduleController {
         response.setSchedule(
                 schedule.getTimeBlocks().stream()
                         .map(this::mapBlockToResponse)
-                        .collect(Collectors.toList())
-        );
+                        .collect(Collectors.toList()));
         return response;
     }
 
     private ScheduleMetrics buildMetrics(Schedule schedule) {
         ScheduleMetrics metrics = new ScheduleMetrics();
-        metrics.setTotalPlannedMinutes(schedule.getTotalPlannedMinutes() != null ? schedule.getTotalPlannedMinutes() : 0);
-        metrics.setUtilizationPercent(schedule.getUtilizationPercent() != null ? schedule.getUtilizationPercent() : 0.0);
+        metrics.setTotalPlannedMinutes(
+                schedule.getTotalPlannedMinutes() != null ? schedule.getTotalPlannedMinutes() : 0);
+        metrics.setUtilizationPercent(
+                schedule.getUtilizationPercent() != null ? schedule.getUtilizationPercent() : 0.0);
         metrics.setOverloadWarning(Boolean.TRUE.equals(schedule.getOverloadWarning()));
         return metrics;
     }

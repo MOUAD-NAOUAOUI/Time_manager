@@ -19,6 +19,10 @@ export const metadata: Metadata = {
   description:
     "An AI-driven time management system that actively tracks performance, analyzes habits, and intelligently schedules your tasks.",
   keywords: ["time management", "AI scheduling", "productivity", "analytics"],
+  icons: {
+    icon: "/images/logo/logo.webp",
+    apple: "/images/logo/logo.webp",
+  },
 };
 
 export default function RootLayout({
@@ -27,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${outfit.variable} h-full`}>
+    <html lang="en" data-scroll-behavior="smooth" className={`${inter.variable} ${outfit.variable} h-full`}>
       <body className="min-h-full flex flex-col antialiased">{children}</body>
     </html>
   );

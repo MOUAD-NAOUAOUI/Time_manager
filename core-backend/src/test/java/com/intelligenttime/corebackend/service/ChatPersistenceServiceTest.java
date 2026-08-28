@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@SuppressWarnings("null")
 public class ChatPersistenceServiceTest {
 
     @Mock
@@ -58,7 +59,8 @@ public class ChatPersistenceServiceTest {
         session.setId(UUID.randomUUID());
         session.setUser(user);
 
-        // Build TaskService from mocked repositories (avoids Mockito byte-buddy instrumentation issues on the concrete service class)
+        // Build TaskService from mocked repositories (avoids Mockito byte-buddy
+        // instrumentation issues on the concrete service class)
         TaskService taskService = new TaskService(taskRepository, userRepository);
 
         chatPersistenceService = new ChatPersistenceService(
@@ -66,8 +68,7 @@ public class ChatPersistenceServiceTest {
                 messageRepository,
                 proposalRepository,
                 userRepository,
-                taskService
-        );
+                taskService);
     }
 
     @Test

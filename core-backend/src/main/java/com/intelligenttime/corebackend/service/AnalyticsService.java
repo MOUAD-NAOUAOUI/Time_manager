@@ -24,7 +24,8 @@ public class AnalyticsService {
     private final TaskRepository taskRepository;
     private final TimeSessionRepository sessionRepository;
 
-    public AnalyticsService(UserRepository userRepository, TaskRepository taskRepository, TimeSessionRepository sessionRepository) {
+    public AnalyticsService(UserRepository userRepository, TaskRepository taskRepository,
+            TimeSessionRepository sessionRepository) {
         this.userRepository = userRepository;
         this.taskRepository = taskRepository;
         this.sessionRepository = sessionRepository;
@@ -43,7 +44,7 @@ public class AnalyticsService {
 
         int totalFocusMinutes = sessions.stream()
                 .filter(s -> s.getDurationMinutes() != null)
-                .mapToInt(TimeSession::getDurationMinutes)
+                .mapToInt(session -> session.getDurationMinutes())
                 .sum();
 
         double completionRate = totalTasks > 0 ? ((double) completedTasks / totalTasks) * 100.0 : 0.0;
@@ -56,8 +57,7 @@ public class AnalyticsService {
                 pendingTasks,
                 totalFocusMinutes,
                 Math.round(completionRate * 10.0) / 10.0,
-                weeklyMetrics
-        );
+                weeklyMetrics);
     }
 
     private List<DailyMetricDTO> calculateWeeklyMetrics(List<TimeSession> sessions, List<Task> tasks) {
@@ -70,7 +70,7 @@ public class AnalyticsService {
             int dayFocus = sessions.stream()
                     .filter(s -> s.getStartTime() != null && s.getStartTime().toLocalDate().isEqual(date))
                     .filter(s -> s.getDurationMinutes() != null)
-                    .mapToInt(TimeSession::getDurationMinutes)
+                    .mapToInt(session -> session.getDurationMinutes())
                     .sum();
 
             int dayTasks = (int) tasks.stream()

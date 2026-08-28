@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Objects;
 
 @Service
 public class SchedulePersistenceService {
@@ -35,7 +36,8 @@ public class SchedulePersistenceService {
     }
 
     @Transactional
-    public Schedule saveOrUpdateSchedule(String email, LocalDate date, ScheduleResponse response, int startHour, int endHour) {
+    public Schedule saveOrUpdateSchedule(String email, LocalDate date, ScheduleResponse response, int startHour,
+            int endHour) {
         User user = findUserByEmail(email);
 
         Schedule schedule = scheduleRepository.findByUserIdAndScheduleDate(user.getId(), date)
@@ -110,7 +112,7 @@ public class SchedulePersistenceService {
         }
         try {
             UUID id = UUID.fromString(taskId);
-            Optional<Task> taskOpt = taskRepository.findById(id);
+            Optional<Task> taskOpt = taskRepository.findById(Objects.requireNonNull(id));
             taskOpt.ifPresent(block::setTask);
         } catch (Exception ignored) {
             // Non-UUID or unknown task IDs are silently skipped

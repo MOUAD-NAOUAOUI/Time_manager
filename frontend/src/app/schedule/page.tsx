@@ -164,8 +164,8 @@ export default function SchedulePage() {
       {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
         <div className="flex items-center gap-2 px-2 mb-8">
-          <Image src="/images/logo/logo.webp" alt="TimeAI" width={32} height={32} className="w-8 h-8" priority />
-          <span className="font-heading font-700 text-[#1A1A1A]">TimeAI</span>
+          <Image src="/images/logo/logo.webp" alt="TimeSpace" width={32} height={32} className="w-8 h-8" priority />
+          <span className="font-heading font-700 text-[#1A1A1A]">TimeSpace</span>
         </div>
 
         {[

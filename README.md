@@ -95,7 +95,10 @@ The expected workflow is:
         - [x] `TimeSessionController.java` (`POST /sessions`, `PUT /sessions/{id}/stop`) - done
         - [x] `AnalyticsController.java` (`GET /analytics/dashboard`) - done
         - [x] `SecurityConfig.java` (Stateless Security Rules & Public Dev Paths) - done
-        - [x] Frontend Next.js 16 (Landing Page, Login, Register, Dashboard, Tasks) - done
+        - [x] Frontend Next.js 16 (TimeSpace landing page, Login, Register, Dashboard, Tasks) - done
+        - [x] TimeSpace branding applied across frontend metadata, navigation, auth screens, and browser icon - done
+        - [x] Uploaded stopwatch logo integrated from `frontend/public/images/logo/logo.webp` - done
+        - [x] Removed oversized promotional architecture, feature, and "How it works" sections from landing page - done
         - [x] Transition MVP to Production SaaS - done
             - [x] Implement real JWT token generation & request security filters in Spring Boot - done
             - [x] Integrate LangChain + Groq API (ChatGroq + Llama 3.3) for real AI Coaching recommendations - done
@@ -153,6 +156,7 @@ The expected workflow is:
     - [x] Rate Limiting (`RateLimiterService` + `TooManyRequestsException` + HTTP 429) stops credential stuffing & brute-force attacks - done
     - [x] AES-256 Application-Level Database Encryption protects sensitive credentials & tokens at rest - done
     - [x] PMD re-audit post encryption: 0 violations, BUILD SUCCESS (`mvn pmd:check` verified) - done
+    - [x] Java IDE diagnostics cleanup: 0 errors reported after null-safety, generic type, and unused-import fixes - done
 18. Deployment
     - [x] Production deployment plan documented (domain, DNS, SSL, Nginx, Docker prod compose, cost) - done
     - [ ] Purchase domain & provision cloud server
@@ -395,9 +399,9 @@ current implementation target. OAuth, external calendar synchronization,
 production deployment, monitoring, performance testing, and end-to-end testing
 remain explicitly deferred until the MVP integration gate is complete.
 
-**Core Concept:** Intelligent Time Manager
+**Core Concept:** TimeSpace
 
-An AI-driven, highly visual time management system that goes beyond traditional scheduling. It actively tracks user performance, analyzes habits, and uses AI to intelligently schedule tasks, identify weaknesses, and recommend actionable improvements.
+An AI-driven, highly visual time management system that goes beyond traditional scheduling. TimeSpace actively tracks user performance, analyzes habits, and uses AI to intelligently schedule tasks, identify weaknesses, and recommend actionable improvements.
 
 **High-Level Objectives:**
 - **AI-Powered Scheduling:** Dynamically tells the user what to do and when to do it based on performance.

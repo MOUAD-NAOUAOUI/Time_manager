@@ -15,9 +15,9 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Intelligent Time Manager — AI-Powered Productivity",
+  title: "TimeSpace",
   description:
-    "An AI-driven time management system that actively tracks performance, analyzes habits, and intelligently schedules your tasks.",
+    "TimeSpace helps you track performance, understand habits, and intelligently schedule your tasks.",
   keywords: ["time management", "AI scheduling", "productivity", "analytics"],
   icons: {
     icon: "/images/logo/logo.webp",

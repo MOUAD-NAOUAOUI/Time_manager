@@ -20,6 +20,18 @@ interface Task {
   status: string;
   estimatedMinutes: number;
   color: string;
+  actualMinutesSpent?: number;
+}
+
+interface WeeklyTimeBlock {
+  taskId?: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+}
+
+interface WeeklySchedule {
+  schedule: WeeklyTimeBlock[];
 }
 
 interface DailyMetric {
@@ -68,8 +80,8 @@ function Sidebar({ active }: { active: string }) {
   return (
     <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
       <div className="flex items-center gap-2 px-2 mb-8">
-        <Image src="/images/logo/logo.webp" alt="TimeAI" width={32} height={32} className="w-8 h-8" priority />
-        <span className="font-heading font-700 text-[#1A1A1A]">TimeAI</span>
+        <Image src="/images/logo/logo.webp" alt="TimeSpace" width={32} height={32} className="w-8 h-8" priority />
+        <span className="font-heading font-700 text-[#1A1A1A]">TimeSpace</span>
       </div>
       {links.map((l) => (
         <Link
@@ -116,10 +128,104 @@ function StatCard({
   );
 }
 
+function WeeklyHourGrid({ tasks, schedules }: { tasks: Task[]; schedules: Record<string, WeeklySchedule> }) {
+  const today = new Date();
+  const weekStart = new Date(today);
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + index);
+    return date;
+  });
+  const hours = Array.from({ length: 24 }, (_, hour) => hour);
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+
+  const getCell = (date: Date, hour: number) => {
+    const dayKey = date.toISOString().slice(0, 10);
+    const block = schedules[dayKey]?.schedule.find((candidate) => {
+      const startHour = Number(candidate.startTime?.split(":")[0]);
+      const endHour = Number(candidate.endTime?.split(":")[0]);
+      return hour >= startHour && hour < endHour;
+    });
+    if (!block) return { tone: "bg-[#F1F1F1]", label: "No task" };
+
+    const task = block.taskId ? taskById.get(block.taskId) : undefined;
+    const completed = task?.status === "completed" ||
+      ((task?.actualMinutesSpent ?? 0) >= (task?.estimatedMinutes ?? 0) * 0.8);
+    return completed
+      ? { tone: "bg-[#BFE8C8]", label: `${block.title} completed` }
+      : { tone: "bg-[#F4B8B8]", label: `${block.title} incomplete` };
+  };
+
+  return (
+    <section className="bg-white rounded-2xl border border-[#E8E2D9] p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+        <div>
+          <h2 className="font-heading font-600 text-[#1A1A1A]">Weekly Hour Map</h2>
+          <p className="text-xs text-[#6B7280] mt-1">Every hour, from Monday through Sunday</p>
+        </div>
+        <div className="flex items-center gap-4 text-xs text-[#6B7280]">
+          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-sm bg-[#BFE8C8]" /> Complete</span>
+          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-sm bg-[#F4B8B8]" /> Incomplete</span>
+          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-sm bg-[#F1F1F1]" /> Empty</span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <div className="min-w-[900px]">
+          <div className="grid grid-cols-[72px_repeat(24,minmax(32px,1fr))] gap-1 mb-1">
+            <div />
+            {hours.map((hour) => <div key={hour} className="text-center text-[10px] text-[#6B7280]">{String(hour).padStart(2, "0")}</div>)}
+          </div>
+          {days.map((date) => (
+            <div key={date.toISOString()} className="grid grid-cols-[72px_repeat(24,minmax(32px,1fr))] gap-1 mb-1">
+              <div className="flex items-center text-xs font-semibold text-[#6B7280]">{date.toLocaleDateString("en-US", { weekday: "short" })}</div>
+              {hours.map((hour) => {
+                const cell = getCell(date, hour);
+                return <div key={hour} title={cell.label} className={`h-7 rounded-sm ${cell.tone}`} />;
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GlobalRecords({ analytics }: { analytics: Analytics | null }) {
+  const records = [
+    { label: "Tasks created", value: analytics?.totalTasks ?? 0 },
+    { label: "Tasks completed", value: analytics?.completedTasks ?? 0 },
+    { label: "Focus minutes", value: analytics?.totalFocusMinutes ?? 0 },
+    { label: "Completion rate", value: `${analytics?.completionRate?.toFixed(0) ?? 0}%` },
+  ];
+
+  return (
+    <section className="bg-white rounded-2xl border border-[#E8E2D9] p-6">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="font-heading font-600 text-[#1A1A1A]">Global Records</h2>
+          <p className="text-xs text-[#6B7280] mt-1">All saved activity across every week</p>
+        </div>
+        <span className="text-xs font-semibold text-[#16A34A] bg-green-50 border border-green-200 px-2.5 py-1 rounded-full">Saved</span>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-[#E8E2D9]">
+        {records.map((record) => (
+          <div key={record.label} className="px-4 first:pl-0 last:pr-0">
+            <p className="text-xs text-[#6B7280] mb-1">{record.label}</p>
+            <p className="font-heading text-2xl font-700 text-[#1A1A1A]">{record.value}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [weeklySchedules, setWeeklySchedules] = useState<Record<string, WeeklySchedule>>({});
   const [coach, setCoach] = useState<CoachTip | null>(null);
   const [assessment, setAssessment] = useState<ProductivityAssessment | null>(null);
   const [activeSession, setActiveSession] = useState<string | null>(null);
@@ -130,16 +236,28 @@ export default function DashboardPage() {
 
   // Fetch analytics + tasks on mount
   useEffect(() => {
-    fetchWithAuth(`${API_URL} / analytics / dashboard`)
+    fetchWithAuth(`${API_URL}/analytics/dashboard`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setAnalytics(d))
       .catch(() => { });
 
-    fetchWithAuth(`${API_URL} / tasks`)
+    fetchWithAuth(`${API_URL}/tasks`)
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setTasks(d))
       .catch(() => { });
-  }, []);
+
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    const weekDates = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + index);
+      return date.toISOString().slice(0, 10);
+    });
+    Promise.all(weekDates.map(async (date) => {
+      const response = await fetchWithAuth(`${API_URL}/schedule/date?email=${encodeURIComponent(email)}&date=${date}`);
+      return [date, response.ok ? await response.json() : { schedule: [] }] as const;
+    })).then((entries) => setWeeklySchedules(Object.fromEntries(entries))).catch(() => { });
+  }, [email]);
 
   // Fetch AI coaching & Productivity Score after analytics/tasks loaded
   useEffect(() => {
@@ -263,6 +381,9 @@ export default function DashboardPage() {
             <StatCard icon={Clock} label="Focus Time" value={`${analytics?.totalFocusMinutes || 0} m`} sub="total tracked" color="#D97706" />
             <StatCard icon={Zap} label="Completion Rate" value={`${analytics?.completionRate?.toFixed(0) || 0}% `} sub="of tasks done" color="#A0785A" />
           </div>
+
+          <WeeklyHourGrid tasks={tasks} schedules={weeklySchedules} />
+          <GlobalRecords analytics={analytics} />
 
           {/* ── Charts Row (Live Real Database Metrics) ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

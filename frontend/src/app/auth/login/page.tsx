@@ -44,8 +44,8 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-10">
-          <Image src="/images/logo/logo.webp" alt="TimeAI" width={36} height={36} className="w-9 h-9 rounded-xl shadow-lg shadow-[#A0785A]/30" priority />
-          <span className="font-heading font-700 text-xl text-[#1A1A1A]">TimeAI</span>
+          <Image src="/images/logo/logo.webp" alt="TimeSpace" width={36} height={36} className="w-9 h-9 rounded-xl shadow-lg shadow-[#A0785A]/30" priority />
+          <span className="font-heading font-700 text-xl text-[#1A1A1A]">TimeSpace</span>
         </div>
 
         {/* Card */}

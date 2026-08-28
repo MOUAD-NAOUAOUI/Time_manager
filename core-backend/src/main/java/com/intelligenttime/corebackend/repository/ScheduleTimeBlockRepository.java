@@ -10,4 +10,6 @@ import java.util.UUID;
 @Repository
 public interface ScheduleTimeBlockRepository extends JpaRepository<ScheduleTimeBlock, UUID> {
     List<ScheduleTimeBlock> findByScheduleIdOrderByStartTimeAsc(UUID scheduleId);
+
+    void deleteByTaskId(UUID taskId);
 }

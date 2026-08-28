@@ -19,7 +19,8 @@ import {
   History,
   MessageSquare,
   Check,
-  Calendar
+  Calendar,
+  Trash2
 } from "lucide-react";
 import { API_URL, fetchWithAuth, getUserEmail, logout } from "@/lib/api";
 
@@ -91,6 +92,8 @@ export default function TasksPage() {
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
+  const [taskPendingDeletion, setTaskPendingDeletion] = useState<Task | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
 
   // Manual Form State
   const [showManualForm, setShowManualForm] = useState(false);
@@ -166,6 +169,27 @@ export default function TasksPage() {
       }
     } catch (err) {
       console.error("Error toggling task status:", err);
+    }
+  };
+
+  const deleteTask = async (task: Task) => {
+    setDeletingTaskId(task.id);
+    try {
+      const email = getUserEmail();
+      const res = await fetchWithAuth(`${API_URL}/tasks/${task.id}?email=${encodeURIComponent(email)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setTasks((previous) => previous.filter((current) => current.id !== task.id));
+        setTaskPendingDeletion(null);
+      } else {
+        alert("The task could not be deleted. Please try again.");
+      }
+    } catch (err) {
+      console.error("Error deleting task:", err);
+      alert("The task could not be deleted. Please try again.");
+    } finally {
+      setDeletingTaskId(null);
     }
   };
 
@@ -309,8 +333,8 @@ export default function TasksPage() {
       {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
         <div className="flex items-center gap-2 px-2 mb-8">
-          <Image src="/images/logo/logo.webp" alt="TimeAI" width={32} height={32} className="w-8 h-8" priority />
-          <span className="font-heading font-700 text-[#1A1A1A]">TimeAI</span>
+          <Image src="/images/logo/logo.webp" alt="TimeSpace" width={32} height={32} className="w-8 h-8" priority />
+          <span className="font-heading font-700 text-[#1A1A1A]">TimeSpace</span>
         </div>
         {[
           { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -801,12 +825,62 @@ export default function TasksPage() {
                   >
                     Track <ChevronRight size={12} />
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => setTaskPendingDeletion(task)}
+                    className="p-2 rounded-lg text-[#9CA3AF] hover:text-[#DC2626] hover:bg-red-50 transition-colors shrink-0"
+                    title="Delete task permanently"
+                    aria-label={`Delete ${task.title} permanently`}
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               ))}
             </div>
           )}
         </main>
       </div>
+
+      {taskPendingDeletion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A1A]/45 p-6" role="presentation">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-task-title"
+            className="w-full max-w-md rounded-2xl bg-white border border-[#E8E2D9] p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+                <Trash2 size={20} className="text-[#DC2626]" />
+              </div>
+              <div>
+                <h2 id="delete-task-title" className="font-heading text-lg font-700 text-[#1A1A1A]">Delete task permanently?</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">
+                  &quot;{taskPendingDeletion.title}&quot; will be permanently removed. Its task record, schedule links, and tracked history cannot be recovered.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setTaskPendingDeletion(null)}
+                disabled={deletingTaskId !== null}
+                className="px-4 py-2.5 rounded-xl border border-[#E8E2D9] text-sm font-semibold text-[#6B7280] hover:bg-[#FAFAF8] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteTask(taskPendingDeletion)}
+                disabled={deletingTaskId !== null}
+                className="px-4 py-2.5 rounded-xl bg-[#DC2626] text-sm font-semibold text-white hover:bg-[#B91C1C] disabled:opacity-60"
+              >
+                {deletingTaskId ? "Deleting..." : "Delete permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

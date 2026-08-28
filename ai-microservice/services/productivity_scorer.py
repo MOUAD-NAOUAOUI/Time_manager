@@ -56,8 +56,8 @@ def calculate_productivity_score(
         accuracy_percent = max(0.0, (1.0 - avg_deviation) * 100.0)
         estimation_points = (accuracy_percent / 100.0) * 25.0
     else:
-        accuracy_percent = 85.0
-        estimation_points = 21.25
+        accuracy_percent = 0.0
+        estimation_points = 0.0
 
     # 3. Focus & Deep Work Component (Weight: 20 points)
     deep_tasks = [t for t in completed_tasks if (t.energy_required or "medium").lower() in ["high", "deep"]]
@@ -70,10 +70,10 @@ def calculate_productivity_score(
     if total_high_priority:
         priority_points = (len(high_priority_completed) / len(total_high_priority)) * 15.0
     else:
-        priority_points = 12.0
+        priority_points = 0.0
 
     raw_score = int(round(completion_points + estimation_points + focus_points + priority_points))
-    final_score = max(10, min(100, raw_score))
+    final_score = max(0, min(100, raw_score))
 
     # Burnout Risk Assessment
     if total_focus_minutes > 480 or (total_tasks > 12 and completion_rate < 40):

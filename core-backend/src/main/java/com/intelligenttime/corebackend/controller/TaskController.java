@@ -22,7 +22,7 @@ public class TaskController {
 
     @PostMapping
     public ResponseEntity<TaskResponse> createTask(@Valid @RequestBody CreateTaskRequest request,
-                                                   Authentication authentication) {
+            Authentication authentication) {
         if (authentication != null && authentication.getName() != null) {
             request.setUserEmail(authentication.getName());
         }
@@ -31,7 +31,7 @@ public class TaskController {
 
     @GetMapping
     public ResponseEntity<List<TaskResponse>> getUserTasks(Authentication authentication,
-                                                           @RequestParam(required = false) String email) {
+            @RequestParam(required = false) String email) {
         String targetEmail = (authentication != null && authentication.getName() != null)
                 ? authentication.getName()
                 : email;
@@ -48,5 +48,17 @@ public class TaskController {
                 ? authentication.getName()
                 : email;
         return ResponseEntity.ok(taskService.updateStatus(taskId, targetEmail, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteTask(
+            @PathVariable("id") UUID taskId,
+            Authentication authentication,
+            @RequestParam(required = false) String email) {
+        String targetEmail = (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : email;
+        taskService.deleteTask(taskId, targetEmail);
+        return ResponseEntity.noContent().build();
     }
 }

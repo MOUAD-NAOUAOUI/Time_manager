@@ -8,8 +8,10 @@ import com.intelligenttime.corebackend.entity.User;
 import com.intelligenttime.corebackend.exception.ResourceNotFoundException;
 import com.intelligenttime.corebackend.exception.UnauthorizedException;
 import com.intelligenttime.corebackend.repository.TaskRepository;
+import com.intelligenttime.corebackend.repository.ScheduleTimeBlockRepository;
 import com.intelligenttime.corebackend.repository.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -22,10 +24,18 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
+    private final ScheduleTimeBlockRepository scheduleTimeBlockRepository;
 
     public TaskService(TaskRepository taskRepository, UserRepository userRepository) {
+        this(taskRepository, userRepository, null);
+    }
+
+    @Autowired
+    public TaskService(TaskRepository taskRepository, UserRepository userRepository,
+            ScheduleTimeBlockRepository scheduleTimeBlockRepository) {
         this.taskRepository = taskRepository;
         this.userRepository = userRepository;
+        this.scheduleTimeBlockRepository = scheduleTimeBlockRepository;
     }
 
     @Transactional
@@ -73,6 +83,20 @@ public class TaskService {
         }
 
         return mapToResponse(taskRepository.save(task));
+    }
+
+    @Transactional
+    public void deleteTask(UUID taskId, String email) {
+        Task task = taskRepository.findById(Objects.requireNonNull(taskId))
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
+        User user = findUserByEmail(email);
+        if (!task.getUser().getId().equals(user.getId())) {
+            throw new UnauthorizedException("You do not own this task");
+        }
+        if (scheduleTimeBlockRepository != null) {
+            scheduleTimeBlockRepository.deleteByTaskId(task.getId());
+        }
+        taskRepository.delete(task);
     }
 
     // ─── Private ─────────────────────────────────────────────────────────────

@@ -1,14 +1,13 @@
+import json
+from groq import Groq
 from core.config import GROQ_API_KEY, GROQ_MODEL
 from core.models import CoachAnalyzeRequest, CoachAnalyzeResponse
 
 def analyze_performance_and_coach(request: CoachAnalyzeRequest) -> CoachAnalyzeResponse:
     """
-    AI Performance Coaching Engine:
-    - Analyzes completion rate and focus duration
-    - Pinpoints cognitive bottlenecks (e.g. procrastination, fragmented work)
-    - Returns structured natural language feedback and 3 actionable tips
+    AI Performance Coaching Engine using official Groq LLaMA 3.3.
     """
-    # 0 Activity Clean State
+    # 0 Activity Clean State - No hallucination
     if request.total_tasks == 0 and request.total_focus_minutes == 0:
         return CoachAnalyzeResponse(
             user_email=request.user_email,
@@ -22,39 +21,42 @@ def analyze_performance_and_coach(request: CoachAnalyzeRequest) -> CoachAnalyzeR
 
     if GROQ_API_KEY:
         try:
-            from langchain_groq import ChatGroq
-            from langchain_core.prompts import ChatPromptTemplate
-            from langchain_core.output_parsers import JsonOutputParser
-
-            llm = ChatGroq(
-                groq_api_key=GROQ_API_KEY,
-                model_name=GROQ_MODEL,
-                temperature=0.3
-            )
-            prompt = ChatPromptTemplate.from_messages([
-                ("system",
-                 "You are an elite, encouraging productivity and performance coach.\n"
-                 "Analyze the user's focus metrics and provide deep, actionable insights.\n"
-                 "Return strict JSON with:\n"
-                 "- 'analysis': A 2-3 sentence personalized evaluation of their current workflow and cognitive stamina.\n"
-                 "- 'tips': An array of exactly 3 tactical, highly specific recommendations to boost deep work.\n"
-                 "Return ONLY the JSON without markdown formatting."),
-                ("human",
-                 "User Metrics:\n"
-                 "- Total Tasks Planned: {total_tasks}\n"
-                 "- Completed Tasks: {completed_tasks}\n"
-                 "- Total Tracked Focus: {focus_hours:.1f} hours ({focus_mins} minutes)\n"
-                 "- Completion Rate: {rate:.1f}%")
-            ])
-            chain = prompt | llm | JsonOutputParser()
+            client = Groq(api_key=GROQ_API_KEY)
             rate = (request.completed_tasks / max(1, request.total_tasks)) * 100
-            result = chain.invoke({
-                "total_tasks": request.total_tasks,
-                "completed_tasks": request.completed_tasks,
-                "focus_hours": request.total_focus_minutes / 60.0,
-                "focus_mins": request.total_focus_minutes,
-                "rate": rate
-            })
+
+            system_prompt = """You are an elite, encouraging productivity and performance coach.
+Analyze the user's focus metrics and provide deep, actionable insights.
+Return strict JSON with:
+{
+  "analysis": "A 2-3 sentence personalized evaluation of their current workflow and cognitive stamina.",
+  "tips": [
+    "Tip 1: tactical, highly specific recommendation",
+    "Tip 2: tactical recommendation",
+    "Tip 3: tactical recommendation"
+  ]
+}
+Return ONLY valid JSON matching this structure.
+"""
+
+            user_prompt = f"""User Performance Metrics:
+- Total Tasks Planned: {request.total_tasks}
+- Completed Tasks: {request.completed_tasks}
+- Total Tracked Focus: {request.total_focus_minutes / 60.0:.1f} hours ({request.total_focus_minutes} minutes)
+- Completion Rate: {rate:.1f}%
+"""
+
+            response = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=600,
+                response_format={"type": "json_object"}
+            )
+
+            result = json.loads(response.choices[0].message.content.strip())
             return CoachAnalyzeResponse(
                 user_email=request.user_email,
                 analysis=result.get("analysis", "Solid progress on your active workflow."),
@@ -65,9 +67,9 @@ def analyze_performance_and_coach(request: CoachAnalyzeRequest) -> CoachAnalyzeR
                 ])
             )
         except Exception as e:
-            print(f"[AI Service Warning] Groq Coach analysis fallback: {e}")
+            print(f"[AI Service Warning] Groq Coach analysis error: {e}")
 
-    # Fallback rule-based coaching
+    # Clean deterministic fallback if Groq is unreachable
     completion_rate = (request.completed_tasks / max(1, request.total_tasks)) * 100
     if completion_rate >= 80:
         analysis = (f"Outstanding performance! You completed {request.completed_tasks}/{request.total_tasks} tasks "

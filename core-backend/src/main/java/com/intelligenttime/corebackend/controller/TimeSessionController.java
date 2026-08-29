@@ -29,6 +29,16 @@ public class TimeSessionController {
         return ResponseEntity.ok(sessionService.startSession(request));
     }
 
+    @GetMapping("/active")
+    public ResponseEntity<SessionResponse> getActiveSession(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            return ResponseEntity.ok(null);
+        }
+        return sessionService.getActiveSession(authentication.getName())
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.ok(null));
+    }
+
     @PutMapping("/{id}/stop")
     public ResponseEntity<SessionResponse> stopSession(@PathVariable UUID id,
             Authentication authentication) {

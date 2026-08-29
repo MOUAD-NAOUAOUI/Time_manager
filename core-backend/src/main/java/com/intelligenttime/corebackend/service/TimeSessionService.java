@@ -93,6 +93,16 @@ public class TimeSessionService {
         return mapToResponse(savedSession);
     }
 
+    @Transactional(readOnly = true)
+    public java.util.Optional<SessionResponse> getActiveSession(String email) {
+        User user = userRepository.findByEmail(email).orElse(null);
+        if (user == null) {
+            return java.util.Optional.empty();
+        }
+        return sessionRepository.findByUserIdAndStatus(user.getId(), "running")
+                .map(this::mapToResponse);
+    }
+
     private SessionResponse mapToResponse(TimeSession session) {
         UUID taskId = session.getTask() != null ? session.getTask().getId() : null;
         return new SessionResponse(

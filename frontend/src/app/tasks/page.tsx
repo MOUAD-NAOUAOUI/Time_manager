@@ -1,15 +1,11 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
 import {
   Plus,
   Clock,
   CheckCircle2,
   Circle,
-  LayoutDashboard,
-  LogOut,
   Sparkles,
   Send,
   AlertTriangle,
@@ -19,10 +15,12 @@ import {
   History,
   MessageSquare,
   Check,
-  Calendar,
-  Trash2
+  Trash2,
+  Play,
+  Square
 } from "lucide-react";
-import { API_URL, fetchWithAuth, getUserEmail, logout } from "@/lib/api";
+import { API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
+import Sidebar from "@/components/Sidebar";
 
 interface Task {
   id: string;
@@ -31,11 +29,14 @@ interface Task {
   estimatedMinutes: number;
   color: string;
   deadline?: string;
+  actualMinutesSpent?: number;
 }
 
 interface ExtractedTask {
   title: string;
   estimated_minutes: number;
+  durationMinutes?: number;
+  recurrence?: string;
   priority: string;
   deadline?: string;
   color: string;
@@ -89,7 +90,6 @@ interface AdvancedGoalPlan {
 const COLORS = ["#A0785A", "#16A34A", "#D97706", "#2563EB", "#9333EA", "#DC2626", "#0891B2"];
 
 export default function TasksPage() {
-  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [taskPendingDeletion, setTaskPendingDeletion] = useState<Task | null>(null);
@@ -124,6 +124,11 @@ export default function TasksPage() {
   const [decomposing, setDecomposing] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
 
+  // Live Timer & Active Session State
+  const [activeSession, setActiveSession] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
   const fetchTasks = () => {
     fetchWithAuth(`${API_URL}/tasks`)
       .then((r) => (r.ok ? r.json() : []))
@@ -131,9 +136,121 @@ export default function TasksPage() {
       .catch(() => { });
   };
 
+  const fetchActiveSession = () => {
+    fetchWithAuth(`${API_URL}/sessions/active`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((active) => {
+        if (active && active.id && active.status === "running") {
+          setActiveSession(active.taskId);
+          setSessionId(active.id);
+          if (active.startTime) {
+            const startMs = new Date(active.startTime).getTime();
+            const nowMs = Date.now();
+            setElapsed(Math.max(0, Math.floor((nowMs - startMs) / 1000)));
+          }
+        } else {
+          setActiveSession(null);
+          setSessionId(null);
+        }
+      })
+      .catch(() => { });
+  };
+
   useEffect(() => {
     fetchTasks();
+    fetchActiveSession();
   }, []);
+
+  // Live timer tick
+  useEffect(() => {
+    if (!activeSession) return;
+    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [activeSession]);
+
+  const startSession = async (task: Task) => {
+    try {
+      const email = getUserEmail();
+      const res = await fetchWithAuth(`${API_URL}/sessions`, {
+        method: "POST",
+        body: JSON.stringify({ userEmail: email, taskId: task.id }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setActiveSession(task.id);
+        setSessionId(d.id);
+        setElapsed(0);
+        setTasks((prev) =>
+          prev.map((t) => (t.id === task.id ? { ...t, status: "in_progress" } : t))
+        );
+      }
+    } catch { /* offline */ }
+  };
+
+  const stopSession = async () => {
+    if (!sessionId) return;
+    try {
+      await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
+      fetchTasks();
+    } catch { /* offline */ }
+    setActiveSession(null);
+    setSessionId(null);
+    setElapsed(0);
+  };
+
+  const getTaskRemainingDisplay = (task: Task) => {
+    const isActive = activeSession === task.id;
+    const totalAllocatedSec = (task.estimatedMinutes || 30) * 60;
+    const pastSpentSec = (task.actualMinutesSpent || 0) * 60;
+
+    if (task.status === "completed") {
+      const spent = task.actualMinutesSpent || task.estimatedMinutes || 0;
+      return {
+        label: `${spent}m · completed`,
+        isLive: false,
+        isOvertime: false,
+      };
+    }
+
+    if (isActive) {
+      const currentTotalSpentSec = pastSpentSec + elapsed;
+      const remainingSec = totalAllocatedSec - currentTotalSpentSec;
+
+      if (remainingSec >= 0) {
+        const remM = Math.floor(remainingSec / 60);
+        const remS = remainingSec % 60;
+        return {
+          label: `${remM}m ${String(remS).padStart(2, "0")}s left`,
+          isLive: true,
+          isOvertime: false,
+        };
+      } else {
+        const overSec = Math.abs(remainingSec);
+        const overM = Math.floor(overSec / 60);
+        const overS = overSec % 60;
+        return {
+          label: `+${overM}m ${String(overS).padStart(2, "0")}s overtime`,
+          isLive: true,
+          isOvertime: true,
+        };
+      }
+    }
+
+    if (task.status === "in_progress" && (task.actualMinutesSpent || 0) > 0) {
+      const remM = Math.max(0, (task.estimatedMinutes || 30) - (task.actualMinutesSpent || 0));
+      return {
+        label: `${remM}m left of ${task.estimatedMinutes}m · in_progress`,
+        isLive: false,
+        isOvertime: false,
+      };
+    }
+
+    return {
+      label: `${task.estimatedMinutes}m · ${task.status}`,
+      isLive: false,
+      isOvertime: false,
+    };
+  };
 
   // 1. Handle Manual Task Creation
   const handleManualCreate = async (e: React.FormEvent) => {
@@ -330,38 +447,7 @@ export default function TasksPage() {
 
   return (
     <div className="flex min-h-screen bg-[#FAFAF8]">
-      {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
-        <div className="flex items-center gap-2 px-2 mb-8">
-          <Image src="/images/logo/logo.webp" alt="TimeSpace" width={32} height={32} className="w-8 h-8" priority />
-          <span className="font-heading font-700 text-[#1A1A1A]">TimeSpace</span>
-        </div>
-        {[
-          { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-          { href: "/tasks", label: "Tasks", icon: CheckCircle2 },
-          { href: "/schedule", label: "Schedule", icon: Calendar },
-        ].map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${l.label === "Tasks"
-              ? "bg-[#F5EFE8] text-[#A0785A]"
-              : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
-              }`}
-          >
-            <l.icon size={16} />
-            {l.label}
-          </Link>
-        ))}
-        <div className="mt-auto">
-          <button
-            onClick={() => logout(router.push)}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[#6B7280] hover:text-[#DC2626] hover:bg-red-50 transition-all w-full"
-          >
-            <LogOut size={16} /> Sign out
-          </button>
-        </div>
-      </aside>
+      <Sidebar active="Tasks" />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col">
@@ -613,8 +699,13 @@ export default function TasksPage() {
                               </div>
                               <div className="flex items-center gap-3 shrink-0">
                                 <span className="text-xs text-[#6B7280] flex items-center gap-1">
-                                  <Clock size={12} /> {task.estimated_minutes}m
+                                  <Clock size={12} /> {task.durationMinutes ?? task.estimated_minutes}m
                                 </span>
+                                {task.recurrence && task.recurrence !== "none" && (
+                                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-[#F5EFE8] text-[#A0785A]">
+                                    {task.recurrence}
+                                  </span>
+                                )}
                                 <span
                                   className={`text-xs px-2 py-0.5 rounded-full font-medium ${task.priority === "high"
                                     ? "bg-red-50 text-[#DC2626]"
@@ -781,61 +872,97 @@ export default function TasksPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {tasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="bg-white rounded-2xl border border-[#E8E2D9] p-4 flex items-center gap-4 hover:border-[#A0785A]/30 hover:shadow-sm transition-all"
-                >
-                  <div className="w-1 h-10 rounded-full shrink-0" style={{ backgroundColor: task.color || "#A0785A" }} />
-                  <button
-                    onClick={() => toggleTaskStatus(task.id, task.status)}
-                    className="flex items-center gap-2 shrink-0 p-1 hover:bg-[#FAFAF8] rounded-lg transition-colors"
-                    title={task.status === "completed" ? "Mark pending" : "Mark completed"}
+              {tasks.map((task) => {
+                const timeInfo = getTaskRemainingDisplay(task);
+                const isActive = activeSession === task.id;
+                return (
+                  <div
+                    key={task.id}
+                    className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition-all ${
+                      isActive
+                        ? "border-[#A0785A] bg-[#F5EFE8]/30 shadow-sm"
+                        : "border-[#E8E2D9] hover:border-[#A0785A]/30 hover:shadow-sm"
+                    }`}
                   >
-                    {task.status === "completed" ? (
-                      <CheckCircle2 size={18} className="text-[#16A34A]" />
-                    ) : (
-                      <Circle size={18} className="text-[#E8E2D9] hover:text-[#A0785A]" />
-                    )}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className={`text-sm font-medium ${task.status === "completed" ? "line-through text-[#6B7280]" : "text-[#1A1A1A]"
-                        }`}
+                    <div
+                      className={`w-1 h-10 rounded-full shrink-0 ${isActive ? "animate-pulse ring-2 ring-[#A0785A]/40" : ""}`}
+                      style={{ backgroundColor: task.color || "#A0785A" }}
+                    />
+                    <button
+                      onClick={() => toggleTaskStatus(task.id, task.status)}
+                      className="flex items-center gap-2 shrink-0 p-1 hover:bg-[#FAFAF8] rounded-lg transition-colors"
+                      title={task.status === "completed" ? "Mark pending" : "Mark completed"}
                     >
-                      {task.title}
-                    </p>
-                    <div className="flex items-center gap-3 mt-0.5">
-                      <span className="text-xs text-[#6B7280] flex items-center gap-1">
-                        <Clock size={10} /> {task.estimatedMinutes}m
-                      </span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${task.status === "completed"
-                          ? "bg-green-50 text-[#16A34A]"
-                          : "bg-[#F5EFE8] text-[#A0785A]"
+                      {task.status === "completed" ? (
+                        <CheckCircle2 size={18} className="text-[#16A34A]" />
+                      ) : (
+                        <Circle size={18} className="text-[#E8E2D9] hover:text-[#A0785A]" />
+                      )}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className={`text-sm font-medium ${task.status === "completed" ? "line-through text-[#6B7280]" : "text-[#1A1A1A]"
                           }`}
                       >
-                        {task.status}
-                      </span>
+                        {task.title}
+                      </p>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span
+                          className={`text-xs flex items-center gap-1 font-medium ${
+                            timeInfo.isOvertime
+                              ? "text-[#DC2626]"
+                              : timeInfo.isLive
+                              ? "text-[#A0785A]"
+                              : "text-[#6B7280]"
+                          }`}
+                        >
+                          <Clock size={11} className={timeInfo.isLive ? "text-[#A0785A] animate-pulse" : ""} />
+                          {timeInfo.label}
+                        </span>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            task.status === "completed"
+                              ? "bg-green-50 text-[#16A34A]"
+                              : isActive || task.status === "in_progress"
+                              ? "bg-[#F5EFE8] text-[#A0785A]"
+                              : "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {isActive ? "in_progress (live)" : task.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isActive ? (
+                        <button
+                          onClick={stopSession}
+                          className="flex items-center gap-1.5 text-xs text-white bg-[#DC2626] px-3 py-1.5 rounded-lg hover:bg-red-700 transition-all font-semibold shadow-sm"
+                        >
+                          <Square size={10} fill="white" /> Stop
+                        </button>
+                      ) : (
+                        task.status !== "completed" && (
+                          <button
+                            onClick={() => startSession(task)}
+                            className="flex items-center gap-1.5 text-xs text-[#A0785A] border border-[#A0785A]/30 px-3 py-1.5 rounded-lg hover:bg-[#F5EFE8] transition-all font-medium"
+                          >
+                            <Play size={11} fill="#A0785A" /> Start
+                          </button>
+                        )
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setTaskPendingDeletion(task)}
+                        className="p-2 rounded-lg text-[#9CA3AF] hover:text-[#DC2626] hover:bg-red-50 transition-colors shrink-0"
+                        title="Delete task permanently"
+                        aria-label={`Delete ${task.title} permanently`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </div>
-                  <Link
-                    href="/dashboard"
-                    className="text-xs text-[#A0785A] border border-[#A0785A]/30 px-3 py-1.5 rounded-lg hover:bg-[#F5EFE8] transition-all font-medium shrink-0 flex items-center gap-1"
-                  >
-                    Track <ChevronRight size={12} />
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setTaskPendingDeletion(task)}
-                    className="p-2 rounded-lg text-[#9CA3AF] hover:text-[#DC2626] hover:bg-red-50 transition-colors shrink-0"
-                    title="Delete task permanently"
-                    aria-label={`Delete ${task.title} permanently`}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </main>

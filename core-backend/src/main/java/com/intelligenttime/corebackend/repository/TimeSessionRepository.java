@@ -12,6 +12,8 @@ public interface TimeSessionRepository extends JpaRepository<TimeSession, UUID> 
 
     boolean existsByUserIdAndStatus(UUID userId, String status);
 
+    java.util.Optional<TimeSession> findByUserIdAndStatus(UUID userId, String status);
+
     List<TimeSession> findByTaskId(UUID taskId);
 
 }

@@ -5,7 +5,7 @@ load_dotenv()
 
 # Environment & API Configurations
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 PORT = int(os.getenv("PORT", os.getenv("AI_SERVICE_PORT", 8000)))
 
 # Productivity & Energy Windows Mapping

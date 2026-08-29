@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 # ---------------------------------------------------------------------------
 # Scheduling Models
@@ -104,10 +104,29 @@ class ChatProcessRequest(BaseModel):
 class ExtractedTaskItem(BaseModel):
     title: str
     estimated_minutes: int
+    durationMinutes: Optional[int] = None
+    recurrence: str = "none"
     priority: str
     deadline: Optional[str] = None
     color: str = "#A0785A"
     priority_reason: str
+
+    def model_post_init(self, __context) -> None:
+        minutes = self.durationMinutes or self.estimated_minutes
+        self.estimated_minutes = minutes
+        self.durationMinutes = minutes
+
+
+class LlmExtractedTask(BaseModel):
+    title: str = Field(description="The work item only, 1-5 words. Never copy the user utterance.")
+    durationMinutes: int = Field(description="Exact duration in minutes. Spoken 'one hour' or 'an hour' is 60.")
+    recurrence: Literal["none", "daily", "weekdays", "weekends", "weekly"] = Field(
+        description="How often the work repeats. Daily covers every day / all days of the week."
+    )
+    priority: Literal["high", "medium", "low"] = "medium"
+    deadline: Optional[str] = None
+    color: str = "#A0785A"
+    priority_reason: str = "Extracted from the user request."
 
 class ScheduleImpact(BaseModel):
     existing_task_count: int
@@ -123,6 +142,13 @@ class PriorityReasoning(BaseModel):
     rank: int
     title: str
     reason: str
+
+class LlmExtractionResult(BaseModel):
+    is_conversational: bool = False
+    ai_reply: str
+    impact_summary: str = ""
+    tasks: List[LlmExtractedTask] = []
+    priority_ranking: List[PriorityReasoning] = []
 
 class ChatProposal(BaseModel):
     extracted_tasks: List[ExtractedTaskItem]

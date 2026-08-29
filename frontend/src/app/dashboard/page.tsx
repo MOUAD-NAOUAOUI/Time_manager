@@ -1,17 +1,16 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend,
 } from "recharts";
 import {
   Clock, CheckCircle2, Target, Zap, Plus, Play, Square,
-  BarChart3, Brain, LogOut, ChevronRight, Award
+  Brain, ChevronRight, Award
 } from "lucide-react";
-import { API_URL, fetchWithAuth, getUserEmail, logout } from "@/lib/api";
+import { API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
+import Sidebar from "@/components/Sidebar";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Task {
@@ -68,45 +67,6 @@ interface ProductivityAssessment {
 }
 
 const BRAND = "#A0785A";
-
-// ── Sidebar ────────────────────────────────────────────────────────────────
-function Sidebar({ active }: { active: string }) {
-  const router = useRouter();
-  const links = [
-    { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
-    { href: "/tasks", label: "Tasks", icon: CheckCircle2 },
-    { href: "/schedule", label: "Schedule", icon: Clock },
-  ];
-  return (
-    <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
-      <div className="flex items-center gap-2 px-2 mb-8">
-        <Image src="/images/logo/logo.webp" alt="TimeSpace" width={32} height={32} className="w-8 h-8" priority />
-        <span className="font-heading font-700 text-[#1A1A1A]">TimeSpace</span>
-      </div>
-      {links.map((l) => (
-        <Link
-          key={l.href}
-          href={l.href}
-          className={`flex items - center gap - 3 px - 3 py - 2.5 rounded - xl text - sm font - medium transition - all ${active === l.label
-            ? "bg-[#F5EFE8] text-[#A0785A]"
-            : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
-            }`}
-        >
-          <l.icon size={16} />
-          {l.label}
-        </Link>
-      ))}
-      <div className="mt-auto">
-        <button
-          onClick={() => logout(router.push)}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[#6B7280] hover:text-[#DC2626] hover:bg-red-50 transition-all w-full"
-        >
-          <LogOut size={16} /> Sign out
-        </button>
-      </div>
-    </aside>
-  );
-}
 
 // ── Stat Card ──────────────────────────────────────────────────────────────
 function StatCard({
@@ -221,13 +181,151 @@ function GlobalRecords({ analytics }: { analytics: Analytics | null }) {
   );
 }
 
+function computeProductivityAssessment(
+  tasks: Task[],
+  totalFocusMinutes: number,
+  activeSessionId: string | null = null,
+  elapsedSec: number = 0
+): ProductivityAssessment {
+  if (!tasks || tasks.length === 0) {
+    return {
+      score: 0,
+      completion_rate: 0,
+      estimation_accuracy_percent: 0,
+      deep_work_ratio: 0,
+      burnout_risk: "low",
+      grade: "N/A",
+      strengths: ["No tasks logged yet"],
+      growth_areas: ["Add tasks to your schedule to activate AI scoring"],
+      actionable_advice: ["Add 2-3 core tasks and start a timer to begin building your index."],
+    };
+  }
+
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((t) => t.status === "completed");
+  const completedCount = completedTasks.length;
+  const completionRate = (completedCount / Math.max(1, totalTasks)) * 100;
+
+  // 1. Completion Rate points (35)
+  const completionPoints = (completionRate / 100) * 35;
+
+  // 2. Estimation Accuracy: evaluate completed tasks and in-progress tasks with logged time
+  const evaluatedAccuracies: number[] = [];
+  for (const t of tasks) {
+    const est = Math.max(1, t.estimatedMinutes || 30);
+    const isRunning = activeSessionId === t.id;
+    const currentActualMins = (t.actualMinutesSpent || 0) + (isRunning ? Math.floor(elapsedSec / 60) : 0);
+
+    if (t.status === "completed") {
+      const act = currentActualMins > 0 ? currentActualMins : est;
+      const acc = Math.max(0, 100 - (Math.abs(est - act) / est) * 100);
+      evaluatedAccuracies.push(acc);
+    } else if (currentActualMins > 0) {
+      const acc = Math.max(0, 100 - (Math.abs(est - currentActualMins) / est) * 100);
+      evaluatedAccuracies.push(acc);
+    }
+  }
+
+  const accuracyPercent = evaluatedAccuracies.length > 0
+    ? evaluatedAccuracies.reduce((a, b) => a + b, 0) / evaluatedAccuracies.length
+    : (completedCount > 0 ? 100 : 0);
+
+  const estimationPoints = (accuracyPercent / 100) * 30;
+
+  // 3. Deep Work Ratio: ratio of high focus / deep tasks
+  const deepTasks = tasks.filter(
+    (t) =>
+      ((t as Task & { priority?: string }).priority || "medium").toLowerCase() === "high" ||
+      ((t as Task & { energyRequired?: string }).energyRequired || "medium").toLowerCase() === "deep" ||
+      (t.estimatedMinutes || 0) >= 60
+  );
+  const deepCompleted = deepTasks.filter((t) => t.status === "completed");
+  const deepMinutes = deepCompleted.reduce((acc, t) => acc + (t.actualMinutesSpent || t.estimatedMinutes || 0), 0);
+  const totalCompletedMinutes = completedTasks.reduce((acc, t) => acc + (t.actualMinutesSpent || t.estimatedMinutes || 0), 0);
+
+  let deepWorkRatio = 0;
+  if (totalCompletedMinutes > 0) {
+    deepWorkRatio = Math.min(100, (deepMinutes / totalCompletedMinutes) * 100);
+  } else if (totalTasks > 0) {
+    deepWorkRatio = Math.min(100, (deepTasks.length / totalTasks) * 100);
+  }
+
+  const deepWorkPoints = (deepWorkRatio / 100) * 20;
+
+  // 4. Focus volume & consistency (15)
+  const currentActiveMins = activeSessionId ? Math.floor(elapsedSec / 60) : 0;
+  const effectiveFocus = Math.max(
+    totalFocusMinutes + currentActiveMins,
+    tasks.reduce((acc, t) => acc + (t.actualMinutesSpent || 0), 0) + currentActiveMins
+  );
+  const focusPoints = Math.min(15, (effectiveFocus / 120) * 15);
+
+  const finalScore = Math.max(0, Math.min(100, Math.round(completionPoints + estimationPoints + deepWorkPoints + focusPoints)));
+
+  let burnoutRisk = "low";
+  if (effectiveFocus > 480 || (totalTasks > 12 && completionRate < 40)) {
+    burnoutRisk = "high";
+  } else if (effectiveFocus > 360 || totalTasks > 9) {
+    burnoutRisk = "elevated";
+  } else if (effectiveFocus > 240) {
+    burnoutRisk = "moderate";
+  }
+
+  let grade = "Needs Attention";
+  if (finalScore >= 90) grade = "A+";
+  else if (finalScore >= 80) grade = "A";
+  else if (finalScore >= 70) grade = "B";
+  else if (finalScore >= 60) grade = "C";
+  else if (finalScore >= 50) grade = "D";
+
+  const strengths: string[] = [];
+  const growthAreas: string[] = [];
+  const advice: string[] = [];
+
+  if (completionRate >= 70) strengths.push(`Strong completion rate (${completionRate.toFixed(0)}%)`);
+  else growthAreas.push(`Completion rate is ${completionRate.toFixed(0)}%`);
+
+  if (accuracyPercent >= 75) strengths.push(`High estimation accuracy (${accuracyPercent.toFixed(0)}%)`);
+  else growthAreas.push(`Variance in task estimations (${accuracyPercent.toFixed(0)}%)`);
+
+  if (burnoutRisk === "high" || burnoutRisk === "elevated") {
+    advice.push("High workload detected — schedule 15m restorative breaks between deep sessions.");
+  } else if (completionRate < 50) {
+    advice.push("Focus on finishing 1 high-priority task before starting new ones.");
+  } else if (accuracyPercent < 75) {
+    advice.push("Calibrate task durations with a 20% buffer to match actual execution pace.");
+  } else {
+    advice.push("Excellent workflow rhythm. Maintain balanced morning focus blocks.");
+  }
+
+  return {
+    score: finalScore,
+    completion_rate: Math.round(completionRate),
+    estimation_accuracy_percent: Math.round(accuracyPercent),
+    deep_work_ratio: Math.round(deepWorkRatio),
+    burnout_risk: burnoutRisk,
+    grade: grade,
+    strengths,
+    growth_areas: growthAreas,
+    actionable_advice: advice,
+  };
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [weeklySchedules, setWeeklySchedules] = useState<Record<string, WeeklySchedule>>({});
   const [coach, setCoach] = useState<CoachTip | null>(null);
-  const [assessment, setAssessment] = useState<ProductivityAssessment | null>(null);
+  const [assessment, setAssessment] = useState<ProductivityAssessment | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("timespace_assessment");
+        if (saved) return JSON.parse(saved);
+      } catch { /* ignore */ }
+    }
+    return null;
+  });
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -257,9 +355,42 @@ export default function DashboardPage() {
       const response = await fetchWithAuth(`${API_URL}/schedule/date?email=${encodeURIComponent(email)}&date=${date}`);
       return [date, response.ok ? await response.json() : { schedule: [] }] as const;
     })).then((entries) => setWeeklySchedules(Object.fromEntries(entries))).catch(() => { });
+
+    // Fetch any currently running active session
+    fetchWithAuth(`${API_URL}/sessions/active`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((active) => {
+        if (active && active.id && active.status === "running") {
+          setActiveSession(active.taskId);
+          setSessionId(active.id);
+          if (active.startTime) {
+            const startMs = new Date(active.startTime).getTime();
+            const nowMs = Date.now();
+            setElapsed(Math.max(0, Math.floor((nowMs - startMs) / 1000)));
+          }
+        }
+      })
+      .catch(() => { });
   }, [email]);
 
-  // Fetch AI coaching & Productivity Score after analytics/tasks loaded
+  // Real-time Event-driven Productivity Recalculation
+  useEffect(() => {
+    if (tasks.length === 0 && !analytics) return;
+    const computed = computeProductivityAssessment(
+      tasks,
+      analytics?.totalFocusMinutes || 0,
+      activeSession,
+      elapsed
+    );
+    setAssessment(computed);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("timespace_assessment", JSON.stringify(computed));
+      } catch { /* ignore */ }
+    }
+  }, [tasks, analytics, activeSession, elapsed]);
+
+  // Fetch AI coaching & Server Productivity Score after analytics/tasks loaded
   useEffect(() => {
     if (!analytics) return;
     fetchWithAuth(`${API_URL}/ai/coach/analyze`, {
@@ -276,7 +407,7 @@ export default function DashboardPage() {
       .then((d) => d && setCoach(d))
       .catch(() => { });
 
-    // Compute Advanced Productivity Score
+    // Compute Advanced Productivity Score on Server
     const records = tasks.map(t => ({
       title: t.title,
       estimated_minutes: t.estimatedMinutes || 30,
@@ -296,7 +427,19 @@ export default function DashboardPage() {
       }),
     })
       .then((r) => r.ok ? r.json() : null)
-      .then((d) => d && setAssessment(d))
+      .then((d) => {
+        if (d) {
+          setAssessment((prev) => ({
+            ...d,
+            ...(prev ? {
+              score: prev.score,
+              estimation_accuracy_percent: prev.estimation_accuracy_percent,
+              deep_work_ratio: prev.deep_work_ratio,
+              grade: prev.grade,
+            } : {})
+          }));
+        }
+      })
       .catch(() => { });
   }, [analytics, tasks, email]);
 
@@ -307,9 +450,21 @@ export default function DashboardPage() {
     return () => clearInterval(t);
   }, [activeSession]);
 
+  const fetchAllData = () => {
+    fetchWithAuth(`${API_URL}/analytics/dashboard`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d && setAnalytics(d))
+      .catch(() => { });
+
+    fetchWithAuth(`${API_URL}/tasks`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((d) => Array.isArray(d) && setTasks(d))
+      .catch(() => { });
+  };
+
   const startSession = async (task: Task) => {
     try {
-      const res = await fetchWithAuth(`${API_URL} / sessions`, {
+      const res = await fetchWithAuth(`${API_URL}/sessions`, {
         method: "POST",
         body: JSON.stringify({ userEmail: email, taskId: task.id }),
       });
@@ -318,6 +473,9 @@ export default function DashboardPage() {
         setActiveSession(task.id);
         setSessionId(d.id);
         setElapsed(0);
+        setTasks((prev) =>
+          prev.map((t) => (t.id === task.id ? { ...t, status: "in_progress" } : t))
+        );
       }
     } catch { /* offline */ }
   };
@@ -325,14 +483,75 @@ export default function DashboardPage() {
   const stopSession = async () => {
     if (!sessionId) return;
     try {
-      await fetchWithAuth(`${API_URL} / sessions / ${sessionId} / stop`, { method: "PUT" });
+      await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
+      fetchAllData();
     } catch { /* offline */ }
     setActiveSession(null);
     setSessionId(null);
+    setElapsed(0);
+  };
+
+  const getTaskRemainingDisplay = (task: Task) => {
+    const isActive = activeSession === task.id;
+    const totalAllocatedSec = (task.estimatedMinutes || 30) * 60;
+    const pastSpentSec = (task.actualMinutesSpent || 0) * 60;
+
+    if (task.status === "completed") {
+      const spent = task.actualMinutesSpent || task.estimatedMinutes || 0;
+      return {
+        label: `${spent}m · completed`,
+        statusText: "completed",
+        isLive: false,
+        isOvertime: false,
+      };
+    }
+
+    if (isActive) {
+      const currentTotalSpentSec = pastSpentSec + elapsed;
+      const remainingSec = totalAllocatedSec - currentTotalSpentSec;
+
+      if (remainingSec >= 0) {
+        const remM = Math.floor(remainingSec / 60);
+        const remS = remainingSec % 60;
+        return {
+          label: `${remM}m ${String(remS).padStart(2, "0")}s left`,
+          statusText: "in_progress",
+          isLive: true,
+          isOvertime: false,
+        };
+      } else {
+        const overSec = Math.abs(remainingSec);
+        const overM = Math.floor(overSec / 60);
+        const overS = overSec % 60;
+        return {
+          label: `+${overM}m ${String(overS).padStart(2, "0")}s overtime`,
+          statusText: "in_progress",
+          isLive: true,
+          isOvertime: true,
+        };
+      }
+    }
+
+    if (task.status === "in_progress" && (task.actualMinutesSpent || 0) > 0) {
+      const remM = Math.max(0, (task.estimatedMinutes || 30) - (task.actualMinutesSpent || 0));
+      return {
+        label: `${remM}m left of ${task.estimatedMinutes}m · in_progress`,
+        statusText: "in_progress",
+        isLive: false,
+        isOvertime: false,
+      };
+    }
+
+    return {
+      label: `${task.estimatedMinutes}m · ${task.status}`,
+      statusText: task.status,
+      isLive: false,
+      isOvertime: false,
+    };
   };
 
   const fmtTime = (s: number) =>
-    `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")} `;
+    `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
   // Pie chart data from real tasks
   const pieData = tasks.length
@@ -463,7 +682,7 @@ export default function DashboardPage() {
           </div>
 
           {/* ── AI Productivity Index Card ── */}
-          {tasks.length > 0 && assessment && (
+          {tasks.length > 0 && assessment ? (
             <div className="bg-white rounded-2xl p-6 border border-[#E8E2D9] shadow-sm">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-[#E8E2D9]">
                 <div className="flex items-center gap-3">
@@ -488,10 +707,10 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-[11px] text-[#6B7280]">Burnout Risk</p>
-                    <span className={`text - xs font - semibold px - 2.5 py - 0.5 rounded - full capitalize ${assessment.burnout_risk === "low" ? "bg-green-50 text-[#16A34A] border border-green-200" :
-                      assessment.burnout_risk === "moderate" ? "bg-amber-50 text-[#D97706] border border-amber-200" :
-                        "bg-red-50 text-[#DC2626] border border-red-200"
-                      } `}>
+                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize border ${assessment.burnout_risk === "low" ? "bg-green-50 text-[#16A34A] border-green-200" :
+                      assessment.burnout_risk === "moderate" ? "bg-amber-50 text-[#D97706] border-amber-200" :
+                        "bg-red-50 text-[#DC2626] border-red-200"
+                      }`}>
                       {assessment.burnout_risk}
                     </span>
                   </div>
@@ -514,6 +733,24 @@ export default function DashboardPage() {
                   <p className="text-[#1A1A1A] italic leading-snug">{assessment.actionable_advice[0] || "Maintain balanced session rhythm."}</p>
                 </div>
               </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl p-6 border border-[#E8E2D9] shadow-sm flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#F5EFE8] flex items-center justify-center">
+                  <Award size={20} className="text-[#A0785A]" />
+                </div>
+                <div>
+                  <h2 className="font-heading font-700 text-base text-[#1A1A1A]">AI Productivity Index</h2>
+                  <p className="text-xs text-[#6B7280]">No data yet — Add tasks and start focus timers to unlock your live score & grade.</p>
+                </div>
+              </div>
+              <Link
+                href="/tasks"
+                className="text-xs text-[#A0785A] border border-[#A0785A]/30 px-3 py-1.5 rounded-lg hover:bg-[#F5EFE8] font-semibold transition-all shrink-0"
+              >
+                Add Tasks →
+              </Link>
             </div>
           )}
 
@@ -558,28 +795,63 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {tasks.slice(0, 5).map((task) => (
-                    <div
-                      key={task.id}
-                      className="flex items-center justify-between p-3 rounded-xl border border-[#E8E2D9] hover:border-[#A0785A]/30 hover:bg-[#FAFAF8] transition-all"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: task.color || BRAND }} />
-                        <div>
-                          <p className="text-sm font-medium text-[#1A1A1A]">{task.title}</p>
-                          <p className="text-xs text-[#6B7280]">{task.estimatedMinutes}m · {task.status}</p>
+                  {tasks.slice(0, 5).map((task) => {
+                    const timeInfo = getTaskRemainingDisplay(task);
+                    const isActive = activeSession === task.id;
+                    return (
+                      <div
+                        key={task.id}
+                        className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                          isActive
+                            ? "border-[#A0785A] bg-[#F5EFE8]/40 shadow-sm"
+                            : "border-[#E8E2D9] hover:border-[#A0785A]/30 hover:bg-[#FAFAF8]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-3 h-3 rounded-full shrink-0 ${isActive ? "animate-pulse ring-2 ring-[#A0785A]/30" : ""}`}
+                            style={{ backgroundColor: task.color || BRAND }}
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-[#1A1A1A]">{task.title}</p>
+                            <p
+                              className={`text-xs flex items-center gap-1 font-medium ${
+                                timeInfo.isOvertime
+                                  ? "text-[#DC2626]"
+                                  : timeInfo.isLive
+                                  ? "text-[#A0785A]"
+                                  : "text-[#6B7280]"
+                              }`}
+                            >
+                              {timeInfo.isLive && (
+                                <Clock size={11} className="text-[#A0785A] animate-pulse" />
+                              )}
+                              {timeInfo.label}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {isActive ? (
+                            <button
+                              onClick={stopSession}
+                              className="flex items-center gap-1.5 text-xs text-white bg-[#DC2626] px-3 py-1.5 rounded-lg hover:bg-red-700 transition-all font-semibold shadow-sm"
+                            >
+                              <Square size={10} fill="white" /> Stop
+                            </button>
+                          ) : (
+                            task.status !== "completed" && (
+                              <button
+                                onClick={() => startSession(task)}
+                                className="flex items-center gap-1.5 text-xs text-[#A0785A] border border-[#A0785A]/30 px-3 py-1.5 rounded-lg hover:bg-[#F5EFE8] transition-all font-medium"
+                              >
+                                <Play size={11} fill="#A0785A" /> Start
+                              </button>
+                            )
+                          )}
                         </div>
                       </div>
-                      {task.status !== "completed" && activeSession !== task.id && (
-                        <button
-                          onClick={() => startSession(task)}
-                          className="flex items-center gap-1.5 text-xs text-[#A0785A] border border-[#A0785A]/30 px-3 py-1.5 rounded-lg hover:bg-[#F5EFE8] transition-all font-medium"
-                        >
-                          <Play size={11} fill="#A0785A" /> Start
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

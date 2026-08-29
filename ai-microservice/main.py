@@ -22,16 +22,10 @@ app = FastAPI(
     version="3.6.0"
 )
 
-# CORS Policy for Local Development & Internal Routing
+# ---------------------------------------------------------------------------
+# CORS Middleware — must be registered before any other middleware
+# ---------------------------------------------------------------------------
 app.add_middleware(
-
-    @app.middleware("http")
-    async def require_internal_token(request: Request, call_next):
-        if request.url.path not in {"/", "/health", "/docs", "/openapi.json", "/redoc"}:
-            expected = os.getenv("AI_SERVICE_INTERNAL_TOKEN", "dev-internal-token")
-            if request.headers.get("X-Internal-Token") != expected:
-                return JSONResponse(status_code=401, content={"detail": "Internal service authentication required"})
-        return await call_next(request)
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
@@ -44,7 +38,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------------------------------------------------------------------
+# Internal Token Authentication Middleware
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def require_internal_token(request: Request, call_next):
+    public_paths = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
+    if request.url.path not in public_paths:
+        expected = os.getenv("AI_SERVICE_INTERNAL_TOKEN", "dev-internal-token")
+        if request.headers.get("X-Internal-Token") != expected:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Internal service authentication required"}
+            )
+    return await call_next(request)
+
+# ---------------------------------------------------------------------------
 # Mount Modular Routers
+# ---------------------------------------------------------------------------
 app.include_router(schedule_router.router)
 app.include_router(coach_router.router)
 app.include_router(chat_router.router)
@@ -60,7 +71,7 @@ def health_check():
     return {
         "status": "healthy",
         "service": "ai-microservice",
-        "version": "3.5.0",
+        "version": "3.6.0",
         "groq_configured": bool(GROQ_API_KEY),
         "model": GROQ_MODEL,
         "scheduling_engine": "constraint-based-v2",
@@ -73,7 +84,7 @@ def root():
     return {
         "message": "Intelligent Time Manager AI Microservice is operational.",
         "docs_url": "/docs",
-        "version": "3.5.0"
+        "version": "3.6.0"
     }
 
 if __name__ == "__main__":

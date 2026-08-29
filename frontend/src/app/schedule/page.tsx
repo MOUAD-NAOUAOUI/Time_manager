@@ -1,22 +1,18 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
 import {
   Calendar,
   Clock,
   Zap,
-  LayoutDashboard,
   CheckCircle2,
-  LogOut,
   AlertTriangle,
   RefreshCw,
   Check,
   Award,
   Sparkles,
 } from "lucide-react";
-import { API_URL, fetchWithAuth, getUserEmail, logout } from "@/lib/api";
+import { API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
+import Sidebar from "@/components/Sidebar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,7 +68,6 @@ const ENERGY_ICON: Record<string, string> = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function SchedulePage() {
-  const router = useRouter();
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -161,41 +156,7 @@ export default function SchedulePage() {
 
   return (
     <div className="min-h-screen bg-[#FAFAF8] text-[#1A1A1A] flex">
-      {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-[#E8E2D9] py-6 px-4 gap-1">
-        <div className="flex items-center gap-2 px-2 mb-8">
-          <Image src="/images/logo/logo.webp" alt="TimeSpace" width={32} height={32} className="w-8 h-8" priority />
-          <span className="font-heading font-700 text-[#1A1A1A]">TimeSpace</span>
-        </div>
-
-        {[
-          { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-          { href: "/tasks", icon: CheckCircle2, label: "Tasks" },
-          { href: "/schedule", icon: Calendar, label: "Schedule", active: true },
-        ].map(({ href, icon: Icon, label, active }) => (
-          <Link
-            key={href}
-            href={href}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${active
-              ? "bg-[#F5EFE8] text-[#A0785A]"
-              : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
-              }`}
-          >
-            <Icon size={16} />
-            {label}
-          </Link>
-        ))}
-
-        <div className="mt-auto">
-          <button
-            onClick={() => logout(router.push)}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[#6B7280] hover:text-[#DC2626] hover:bg-red-50 transition-all w-full"
-          >
-            <LogOut size={16} />
-            Sign out
-          </button>
-        </div>
-      </aside>
+      <Sidebar active="Schedule" />
 
       {/* Main content */}
       <main className="flex-1 overflow-auto p-6 max-w-6xl mx-auto w-full space-y-6">

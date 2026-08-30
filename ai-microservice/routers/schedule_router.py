@@ -13,7 +13,8 @@ def schedule_generate(request: ScheduleRequest):
         tasks=request.tasks,
         start_hour=request.start_hour or 9,
         end_hour=request.end_hour or 18,
-        schedule_date_str=request.date
+        schedule_date_str=request.date,
+        user_timezone=request.timezone or "UTC"
     )
     explanation = generate_schedule_explanation(blocks, metrics)
     return ScheduleResponse(

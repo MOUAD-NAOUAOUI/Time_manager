@@ -51,7 +51,8 @@ def generate_constraint_schedule(
     tasks: List[TaskItem],
     start_hour: int = 9,
     end_hour: int = 18,
-    schedule_date_str: str = None
+    schedule_date_str: str = None,
+    user_timezone: str = "UTC"
 ) -> Tuple[List[TimeBlock], ScheduleMetrics]:
     """
     Mathematical Constraint Satisfaction Engine:
@@ -59,7 +60,12 @@ def generate_constraint_schedule(
     - Cognitive Energy Window Placement
     - Inter-task Smart Breaks & Overload Calculation
     """
-    ref_date = date.today()
+    try:
+        from zoneinfo import ZoneInfo
+        ref_date = datetime.now(ZoneInfo(user_timezone or "UTC")).date()
+    except Exception:
+        ref_date = date.today()
+
     if schedule_date_str:
         try:
             ref_date = datetime.strptime(schedule_date_str, "%Y-%m-%d").date()

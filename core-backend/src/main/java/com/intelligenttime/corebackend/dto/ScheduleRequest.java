@@ -14,6 +14,7 @@ public class ScheduleRequest {
     private int startHour = 9;
     private int endHour   = 18;
     private String date;
+    private String timezone = "UTC";
 
     public ScheduleRequest() {}
 
@@ -31,4 +32,7 @@ public class ScheduleRequest {
 
     public String getDate()                              { return date; }
     public void setDate(String date)                     { this.date = date; }
+
+    public String getTimezone()                          { return timezone; }
+    public void setTimezone(String timezone)             { this.timezone = timezone; }
 }

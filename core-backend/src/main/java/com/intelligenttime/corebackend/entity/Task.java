@@ -23,6 +23,9 @@ public class Task {
     @Column(name = "color")
     private String color = "#A0785A";
 
+    @Column(name = "recurrence", length = 50)
+    private String recurrence = "none";
+
     @Column(name = "estimated_minutes")
     private Integer estimatedMinutes = 30;
 
@@ -58,6 +61,9 @@ public class Task {
 
     public String getColor() { return color; }
     public void setColor(String color) { this.color = color; }
+
+    public String getRecurrence() { return recurrence; }
+    public void setRecurrence(String recurrence) { this.recurrence = recurrence; }
 
     public Integer getEstimatedMinutes() { return estimatedMinutes; }
     public void setEstimatedMinutes(Integer estimatedMinutes) { this.estimatedMinutes = estimatedMinutes; }

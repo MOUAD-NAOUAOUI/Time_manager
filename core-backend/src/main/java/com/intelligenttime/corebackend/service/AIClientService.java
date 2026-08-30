@@ -95,6 +95,7 @@ public class AIClientService {
         payload.put("user_email", request.getUserEmail());
         payload.put("start_hour", request.getStartHour());
         payload.put("end_hour", request.getEndHour());
+        payload.put("timezone", request.getTimezone() != null ? request.getTimezone() : "UTC");
         if (request.getDate() != null) {
             payload.put("date", request.getDate());
         }
@@ -192,6 +193,17 @@ public class AIClientService {
                 createReq.setTitle(task.getTitle());
                 createReq.setColor(task.getColor());
                 createReq.setEstimatedMinutes(task.getEstimatedMinutes());
+                createReq.setRecurrence(task.getRecurrence() != null ? task.getRecurrence() : "none");
+                createReq.setPriority(task.getPriority() != null ? task.getPriority() : "medium");
+                if (task.getDeadline() != null && !task.getDeadline().isBlank()) {
+                    try {
+                        createReq.setDeadline(java.time.ZonedDateTime.parse(task.getDeadline()));
+                    } catch (Exception e) {
+                        try {
+                            createReq.setDeadline(java.time.LocalDate.parse(task.getDeadline()).atStartOfDay(java.time.ZoneId.systemDefault()));
+                        } catch (Exception ignored) { /* ignore invalid date */ }
+                    }
+                }
                 savedTasks.add(taskService.createTask(createReq));
             }
         }

@@ -481,14 +481,32 @@ export default function DashboardPage() {
   };
 
   const stopSession = async () => {
-    if (!sessionId) return;
     try {
-      await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
+      if (sessionId) {
+        await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
+      } else {
+        const res = await fetchWithAuth(`${API_URL}/sessions/active`);
+        if (res.ok) {
+          const active = await res.json();
+          if (active?.id) {
+            await fetchWithAuth(`${API_URL}/sessions/${active.id}/stop`, { method: "PUT" });
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to stop session:", e);
+    } finally {
+      setActiveSession(null);
+      setSessionId(null);
+      setElapsed(0);
       fetchAllData();
-    } catch { /* offline */ }
-    setActiveSession(null);
-    setSessionId(null);
-    setElapsed(0);
+    }
+  };
+
+  const formatStatus = (st: string) => {
+    if (!st) return "Pending";
+    if (st === "in_progress") return "In Progress";
+    return st.charAt(0).toUpperCase() + st.slice(1).replace("_", " ");
   };
 
   const getTaskRemainingDisplay = (task: Task) => {
@@ -499,8 +517,8 @@ export default function DashboardPage() {
     if (task.status === "completed") {
       const spent = task.actualMinutesSpent || task.estimatedMinutes || 0;
       return {
-        label: `${spent}m · completed`,
-        statusText: "completed",
+        label: `${spent}m · Completed`,
+        statusText: "Completed",
         isLive: false,
         isOvertime: false,
       };
@@ -515,7 +533,7 @@ export default function DashboardPage() {
         const remS = remainingSec % 60;
         return {
           label: `${remM}m ${String(remS).padStart(2, "0")}s left`,
-          statusText: "in_progress",
+          statusText: "In Progress",
           isLive: true,
           isOvertime: false,
         };
@@ -525,7 +543,7 @@ export default function DashboardPage() {
         const overS = overSec % 60;
         return {
           label: `+${overM}m ${String(overS).padStart(2, "0")}s overtime`,
-          statusText: "in_progress",
+          statusText: "In Progress",
           isLive: true,
           isOvertime: true,
         };
@@ -535,16 +553,16 @@ export default function DashboardPage() {
     if (task.status === "in_progress" && (task.actualMinutesSpent || 0) > 0) {
       const remM = Math.max(0, (task.estimatedMinutes || 30) - (task.actualMinutesSpent || 0));
       return {
-        label: `${remM}m left of ${task.estimatedMinutes}m · in_progress`,
-        statusText: "in_progress",
+        label: `${remM}m left of ${task.estimatedMinutes}m · In Progress`,
+        statusText: "In Progress",
         isLive: false,
         isOvertime: false,
       };
     }
 
     return {
-      label: `${task.estimatedMinutes}m · ${task.status}`,
-      statusText: task.status,
+      label: `${task.estimatedMinutes}m · ${formatStatus(task.status)}`,
+      statusText: formatStatus(task.status),
       isLive: false,
       isOvertime: false,
     };

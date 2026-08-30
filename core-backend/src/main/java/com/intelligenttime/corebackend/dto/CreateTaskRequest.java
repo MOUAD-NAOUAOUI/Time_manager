@@ -19,6 +19,7 @@ public class CreateTaskRequest {
     private String priority = "medium";
     private String energyRequired = "medium";
     private String category = "general";
+    private String recurrence = "none";
 
     public CreateTaskRequest() {
     }
@@ -85,5 +86,13 @@ public class CreateTaskRequest {
 
     public void setCategory(String category) {
         this.category = category;
+    }
+
+    public String getRecurrence() {
+        return recurrence;
+    }
+
+    public void setRecurrence(String recurrence) {
+        this.recurrence = recurrence;
     }
 }

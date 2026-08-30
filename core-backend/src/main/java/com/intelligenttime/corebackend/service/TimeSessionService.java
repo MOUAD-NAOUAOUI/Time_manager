@@ -79,8 +79,12 @@ public class TimeSessionService {
         session.setEndTime(endTime);
         session.setStatus("completed");
 
-        long duration = Duration.between(session.getStartTime(), endTime).toMinutes();
-        session.setDurationMinutes((int) Math.max(1, duration));
+        long seconds = Duration.between(session.getStartTime(), endTime).getSeconds();
+        int durationMinutes = (int) Math.round(seconds / 60.0);
+        if (seconds >= 15 && durationMinutes == 0) {
+            durationMinutes = 1;
+        }
+        session.setDurationMinutes(durationMinutes);
 
         if (session.getTask() != null) {
             Task task = session.getTask();

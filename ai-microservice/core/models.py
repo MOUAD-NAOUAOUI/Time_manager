@@ -19,6 +19,7 @@ class ScheduleRequest(BaseModel):
     start_hour: Optional[int] = 9
     end_hour: Optional[int] = 18
     date: Optional[str] = None
+    timezone: Optional[str] = "UTC"
 
 class TimeBlock(BaseModel):
     task_id: Optional[str] = None

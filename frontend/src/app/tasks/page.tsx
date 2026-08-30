@@ -30,6 +30,7 @@ interface Task {
   color: string;
   deadline?: string;
   actualMinutesSpent?: number;
+  recurrence?: string;
 }
 
 interface ExtractedTask {
@@ -97,6 +98,9 @@ export default function TasksPage() {
 
   // Manual Form State
   const [showManualForm, setShowManualForm] = useState(false);
+  const [showTimeUpModal, setShowTimeUpModal] = useState(false);
+  const [timeUpTask, setTimeUpTask] = useState<Task | null>(null);
+  const [hasPrompted, setHasPrompted] = useState(false);
   const [manualForm, setManualForm] = useState({
     title: "",
     estimatedMinutes: 30,
@@ -164,9 +168,86 @@ export default function TasksPage() {
   // Live timer tick
   useEffect(() => {
     if (!activeSession) return;
-    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
-    return () => clearInterval(t);
+    const interval = setInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
   }, [activeSession]);
+
+  // Overtime detection
+  useEffect(() => {
+    if (!activeSession || hasPrompted || elapsed <= 0) return;
+    const task = tasks.find((t) => t.id === activeSession);
+    if (!task) return;
+    const totalAllocatedSec = (task.estimatedMinutes || 30) * 60;
+    const pastSpentSec = (task.actualMinutesSpent || 0) * 60;
+    const remainingSec = totalAllocatedSec - (pastSpentSec + elapsed);
+    if (remainingSec <= 0) {
+      setTimeUpTask(task);
+      setShowTimeUpModal(true);
+      setHasPrompted(true);
+    }
+  }, [elapsed, activeSession, tasks, hasPrompted]);
+
+  // Reset prompt flag when session changes
+  useEffect(() => {
+    setHasPrompted(false);
+  }, [activeSession]);
+
+  // Handler to add minutes and keep timer running
+  const handleAddMinutes = async (mins: number) => {
+    if (!timeUpTask) return;
+    try {
+      const email = getUserEmail();
+      const res = await fetchWithAuth(`${API_URL}/tasks/${timeUpTask.id}/status?email=${encodeURIComponent(email)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addMinutes: mins }),
+      });
+      if (res.ok) {
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === timeUpTask.id ? { ...t, estimatedMinutes: (t.estimatedMinutes || 30) + mins } : t
+          )
+        );
+        setShowTimeUpModal(false);
+        setHasPrompted(false); // allow re-trigger if they hit overtime again
+      } else {
+        alert("Failed to extend task time.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error extending task time.");
+    }
+  };
+
+// Handler to finish task
+  const handleFinishTask = async () => {
+    if (!timeUpTask) return;
+    setShowTimeUpModal(false);
+    // forceComplete=true skips the modal re-check
+    await stopSession(true);
+    try {
+      const email = getUserEmail();
+      const res = await fetchWithAuth(`${API_URL}/tasks/${timeUpTask.id}/status?email=${encodeURIComponent(email)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "completed" }),
+      });
+      if (res.ok) {
+        setTasks((prev) =>
+          prev.map((t) => (t.id === timeUpTask.id ? { ...t, status: "completed" } : t))
+        );
+      } else {
+        alert("Failed to complete task.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error completing task.");
+    }
+  };
+
+
 
   const startSession = async (task: Task) => {
     try {
@@ -187,15 +268,47 @@ export default function TasksPage() {
     } catch { /* offline */ }
   };
 
-  const stopSession = async () => {
-    if (!sessionId) return;
+  const stopSession = async (forceComplete = false) => {
+    // If the active task's time is up, show the modal instead of silently stopping
+    if (!forceComplete && activeSession) {
+      const task = tasks.find((t) => t.id === activeSession);
+      if (task) {
+        const totalSec = (task.estimatedMinutes || 30) * 60;
+        const spentSec = (task.actualMinutesSpent || 0) * 60 + elapsed;
+        if (spentSec >= totalSec) {
+          setTimeUpTask(task);
+          setShowTimeUpModal(true);
+          setHasPrompted(true);
+          return; // don't stop yet — let the modal decide
+        }
+      }
+    }
     try {
-      await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
+      if (sessionId) {
+        await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
+      } else {
+        const res = await fetchWithAuth(`${API_URL}/sessions/active`);
+        if (res.ok) {
+          const active = await res.json();
+          if (active?.id) {
+            await fetchWithAuth(`${API_URL}/sessions/${active.id}/stop`, { method: "PUT" });
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to stop session:", e);
+    } finally {
+      setActiveSession(null);
+      setSessionId(null);
+      setElapsed(0);
       fetchTasks();
-    } catch { /* offline */ }
-    setActiveSession(null);
-    setSessionId(null);
-    setElapsed(0);
+    }
+  };
+
+  const formatStatus = (st: string) => {
+    if (!st) return "Pending";
+    if (st === "in_progress") return "In Progress";
+    return st.charAt(0).toUpperCase() + st.slice(1).replace("_", " ");
   };
 
   const getTaskRemainingDisplay = (task: Task) => {
@@ -206,7 +319,7 @@ export default function TasksPage() {
     if (task.status === "completed") {
       const spent = task.actualMinutesSpent || task.estimatedMinutes || 0;
       return {
-        label: `${spent}m · completed`,
+        label: `${spent}m · Completed`,
         isLive: false,
         isOvertime: false,
       };
@@ -239,14 +352,14 @@ export default function TasksPage() {
     if (task.status === "in_progress" && (task.actualMinutesSpent || 0) > 0) {
       const remM = Math.max(0, (task.estimatedMinutes || 30) - (task.actualMinutesSpent || 0));
       return {
-        label: `${remM}m left of ${task.estimatedMinutes}m · in_progress`,
+        label: `${remM}m left of ${task.estimatedMinutes}m · In Progress`,
         isLive: false,
         isOvertime: false,
       };
     }
 
     return {
-      label: `${task.estimatedMinutes}m · ${task.status}`,
+      label: `${task.estimatedMinutes}m · ${formatStatus(task.status)}`,
       isLive: false,
       isOvertime: false,
     };
@@ -928,14 +1041,19 @@ export default function TasksPage() {
                               : "bg-gray-100 text-gray-600"
                           }`}
                         >
-                          {isActive ? "in_progress (live)" : task.status}
+                          {isActive ? "In Progress (Live)" : formatStatus(task.status)}
                         </span>
+                        {task.recurrence && task.recurrence !== "none" && (
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-[#F5EFE8] text-[#A0785A] border border-[#A0785A]/25 capitalize">
+                            {task.recurrence}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {isActive ? (
                         <button
-                          onClick={stopSession}
+                          onClick={() => stopSession()}
                           className="flex items-center gap-1.5 text-xs text-white bg-[#DC2626] px-3 py-1.5 rounded-lg hover:bg-red-700 transition-all font-semibold shadow-sm"
                         >
                           <Square size={10} fill="white" /> Stop
@@ -1003,6 +1121,44 @@ export default function TasksPage() {
                 className="px-4 py-2.5 rounded-xl bg-[#DC2626] text-sm font-semibold text-white hover:bg-[#B91C1C] disabled:opacity-60"
               >
                 {deletingTaskId ? "Deleting..." : "Delete permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Time Reached Modal */}
+      {showTimeUpModal && timeUpTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A1A]/45 p-6">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-[#E8E2D9] p-6 shadow-2xl">
+            <h2 className="font-heading text-lg font-semibold text-[#1A1A1A] mb-2">Task Time Reached</h2>
+            <p className="mb-5 text-sm text-[#6B7280]">
+              The planned {timeUpTask.estimatedMinutes} minutes for &ldquo;{timeUpTask.title}&rdquo; have elapsed.
+              Add more time or finish the task?
+            </p>
+            <div className="flex flex-wrap gap-2 mb-5">
+              {[5, 10, 15, 30].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => handleAddMinutes(m)}
+                  className="px-4 py-2 bg-[#A0785A] text-white rounded-xl text-sm font-medium hover:bg-[#7D5C42]"
+                >
+                  +{m}m
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => { setShowTimeUpModal(false); setHasPrompted(false); }}
+                className="px-4 py-2 border border-[#E8E2D9] text-[#6B7280] rounded-xl text-sm hover:bg-[#FAFAF8]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFinishTask}
+                className="flex items-center gap-2 px-4 py-2 bg-[#16A34A] text-white rounded-xl text-sm font-medium hover:bg-[#15803D]"
+              >
+                <CheckCircle2 size={15} /> Finish Task
               </button>
             </div>
           </div>

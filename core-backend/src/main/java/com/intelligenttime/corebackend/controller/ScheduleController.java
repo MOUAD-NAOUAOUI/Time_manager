@@ -27,14 +27,17 @@ public class ScheduleController {
     private final AIClientService aiClientService;
     private final TaskService taskService;
     private final SchedulePersistenceService schedulePersistenceService;
+    private final com.intelligenttime.corebackend.repository.UserRepository userRepository;
 
     public ScheduleController(
             AIClientService aiClientService,
             TaskService taskService,
-            SchedulePersistenceService schedulePersistenceService) {
+            SchedulePersistenceService schedulePersistenceService,
+            com.intelligenttime.corebackend.repository.UserRepository userRepository) {
         this.aiClientService = aiClientService;
         this.taskService = taskService;
         this.schedulePersistenceService = schedulePersistenceService;
+        this.userRepository = userRepository;
     }
 
     @PostMapping("/generate")
@@ -43,6 +46,13 @@ public class ScheduleController {
             Authentication authentication) {
         String email = authentication.getName();
         request.setUserEmail(email);
+        if (request.getTimezone() == null || request.getTimezone().isBlank() || "UTC".equals(request.getTimezone())) {
+            userRepository.findByEmail(email).ifPresent(u -> {
+                if (u.getTimezone() != null && !u.getTimezone().isBlank()) {
+                    request.setTimezone(u.getTimezone());
+                }
+            });
+        }
         if (request.getTasks() == null || request.getTasks().isEmpty()) {
             request.setTasks(mapToScheduleTaskItems(taskService.getUserTasks(email)));
         }
@@ -73,6 +83,13 @@ public class ScheduleController {
         scheduleRequest.setUserEmail(userEmail);
         scheduleRequest.setStartHour(startHour);
         scheduleRequest.setEndHour(endHour);
+        if (userEmail != null) {
+            userRepository.findByEmail(userEmail).ifPresent(u -> {
+                if (u.getTimezone() != null && !u.getTimezone().isBlank()) {
+                    scheduleRequest.setTimezone(u.getTimezone());
+                }
+            });
+        }
         scheduleRequest.setTasks(mapToScheduleTaskItems(userTasks));
 
         ScheduleResponse response = aiClientService.generateSchedule(scheduleRequest);

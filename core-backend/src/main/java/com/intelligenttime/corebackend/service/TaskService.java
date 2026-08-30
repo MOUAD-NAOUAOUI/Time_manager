@@ -56,6 +56,8 @@ public class TaskService {
             task.setEnergyRequired(request.getEnergyRequired());
         if (request.getCategory() != null)
             task.setCategory(request.getCategory());
+        if (request.getRecurrence() != null)
+            task.setRecurrence(request.getRecurrence());
         return mapToResponse(taskRepository.save(task));
     }
 
@@ -77,7 +79,15 @@ public class TaskService {
             throw new UnauthorizedException("You do not own this task");
         }
 
-        task.setStatus(request.getStatus());
+        if (request.getStatus() != null && !request.getStatus().isBlank()) {
+            task.setStatus(request.getStatus());
+        }
+        if (request.getAddMinutes() != null && request.getAddMinutes() > 0) {
+            int currentEst = task.getEstimatedMinutes() != null ? task.getEstimatedMinutes() : 30;
+            task.setEstimatedMinutes(currentEst + request.getAddMinutes());
+        } else if (request.getEstimatedMinutes() != null && request.getEstimatedMinutes() > 0) {
+            task.setEstimatedMinutes(request.getEstimatedMinutes());
+        }
         if (request.getActualMinutesSpent() != null) {
             task.setActualMinutesSpent(request.getActualMinutesSpent());
         }
@@ -118,6 +128,7 @@ public class TaskService {
                 task.getActualMinutesSpent(),
                 task.getPriority(),
                 task.getEnergyRequired(),
-                task.getCategory());
+                task.getCategory(),
+                task.getRecurrence());
     }
 }

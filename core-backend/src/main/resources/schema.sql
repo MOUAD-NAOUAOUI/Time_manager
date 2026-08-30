@@ -35,10 +35,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     energy_required VARCHAR(20) NOT NULL DEFAULT 'medium',
     category VARCHAR(100) DEFAULT 'general',
     color VARCHAR(20) DEFAULT '#A0785A',
+    recurrence VARCHAR(50) NOT NULL DEFAULT 'none',
     deadline TIMESTAMP WITH TIME ZONE,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence VARCHAR(50) NOT NULL DEFAULT 'none';
 
 -- 4. Time Sessions Table
 CREATE TABLE IF NOT EXISTS time_sessions (

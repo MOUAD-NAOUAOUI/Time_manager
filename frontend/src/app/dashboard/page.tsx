@@ -6,7 +6,7 @@ import {
   PieChart, Pie, Cell, LineChart, Line, Legend,
 } from "recharts";
 import {
-  Clock, CheckCircle2, Target, Zap, Plus, Play, Square,
+  Clock, CheckCircle2, Circle, Target, Zap, Plus, Play, Square,
   Brain, ChevronRight, Award
 } from "lucide-react";
 import { API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
@@ -20,6 +20,8 @@ interface Task {
   estimatedMinutes: number;
   color: string;
   actualMinutesSpent?: number;
+  deadline?: string;
+  createdAt?: string;
 }
 
 interface WeeklyTimeBlock {
@@ -88,8 +90,18 @@ function StatCard({
   );
 }
 
+const formatLocalDate = (d: Date) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 function WeeklyHourGrid({ tasks, schedules }: { tasks: Task[]; schedules: Record<string, WeeklySchedule> }) {
   const today = new Date();
+  const todayKey = formatLocalDate(today);
+  const currentHour = today.getHours();
+
   const weekStart = new Date(today);
   weekStart.setHours(0, 0, 0, 0);
   weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
@@ -102,20 +114,56 @@ function WeeklyHourGrid({ tasks, schedules }: { tasks: Task[]; schedules: Record
   const taskById = new Map(tasks.map((task) => [task.id, task]));
 
   const getCell = (date: Date, hour: number) => {
-    const dayKey = date.toISOString().slice(0, 10);
-    const block = schedules[dayKey]?.schedule.find((candidate) => {
+    const dayKey = formatLocalDate(date);
+
+    // 1. Explicit scheduled blocks from AI schedule
+    const block = schedules[dayKey]?.schedule?.find((candidate) => {
       const startHour = Number(candidate.startTime?.split(":")[0]);
       const endHour = Number(candidate.endTime?.split(":")[0]);
       return hour >= startHour && hour < endHour;
     });
-    if (!block) return { tone: "bg-[#F1F1F1]", label: "No task" };
+    if (block) {
+      const task = block.taskId ? taskById.get(block.taskId) : undefined;
+      const completed = task?.status === "completed" ||
+        ((task?.actualMinutesSpent ?? 0) >= (task?.estimatedMinutes ?? 0) * 0.8);
+      return completed
+        ? { tone: "bg-[#BFE8C8]", label: `${block.title} (Completed)` }
+        : { tone: "bg-[#F4B8B8]", label: `${block.title} (Scheduled)` };
+    }
 
-    const task = block.taskId ? taskById.get(block.taskId) : undefined;
-    const completed = task?.status === "completed" ||
-      ((task?.actualMinutesSpent ?? 0) >= (task?.estimatedMinutes ?? 0) * 0.8);
-    return completed
-      ? { tone: "bg-[#BFE8C8]", label: `${block.title} completed` }
-      : { tone: "bg-[#F4B8B8]", label: `${block.title} incomplete` };
+    // 2. Deadline tasks matching this day and hour
+    const deadlineTask = tasks.find((t) => {
+      if (!t.deadline) return false;
+      const dStr = t.deadline.slice(0, 10);
+      if (dStr !== dayKey) return false;
+      if (t.deadline.includes("T")) {
+        const dHour = new Date(t.deadline).getHours();
+        return dHour === hour;
+      }
+      return hour === 17;
+    });
+    if (deadlineTask) {
+      const completed = deadlineTask.status === "completed";
+      return completed
+        ? { tone: "bg-[#BFE8C8]", label: `${deadlineTask.title} (Completed)` }
+        : { tone: "bg-[#F4B8B8]", label: `${deadlineTask.title} (Deadline)` };
+    }
+
+    // 3. Map all tasks to work hours on today
+    if (dayKey === todayKey && tasks.length > 0) {
+      const startWorkHour = 9;
+      if (hour >= startWorkHour && hour < startWorkHour + tasks.length) {
+        const task = tasks[hour - startWorkHour];
+        if (task) {
+          const completed = task.status === "completed";
+          return completed
+            ? { tone: "bg-[#BFE8C8]", label: `${task.title} (Complete)` }
+            : { tone: "bg-[#F4B8B8]", label: `${task.title} (Incomplete)` };
+        }
+      }
+    }
+
+    return { tone: "bg-[#F1F1F1]", label: "Empty" };
   };
 
   return (
@@ -329,6 +377,9 @@ export default function DashboardPage() {
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [showTimeUpModal, setShowTimeUpModal] = useState(false);
+  const [timeUpTask, setTimeUpTask] = useState<Task | null>(null);
+  const [hasPrompted, setHasPrompted] = useState(false);
 
   const email = getUserEmail();
 
@@ -345,11 +396,12 @@ export default function DashboardPage() {
       .catch(() => { });
 
     const weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
     weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
     const weekDates = Array.from({ length: 7 }, (_, index) => {
       const date = new Date(weekStart);
       date.setDate(weekStart.getDate() + index);
-      return date.toISOString().slice(0, 10);
+      return formatLocalDate(date);
     });
     Promise.all(weekDates.map(async (date) => {
       const response = await fetchWithAuth(`${API_URL}/schedule/date?email=${encodeURIComponent(email)}&date=${date}`);
@@ -450,6 +502,26 @@ export default function DashboardPage() {
     return () => clearInterval(t);
   }, [activeSession]);
 
+  // Overtime detection
+  useEffect(() => {
+    if (!activeSession || hasPrompted || elapsed <= 0) return;
+    const task = tasks.find((t) => t.id === activeSession);
+    if (!task) return;
+    const totalAllocatedSec = (task.estimatedMinutes || 30) * 60;
+    const pastSpentSec = (task.actualMinutesSpent || 0) * 60;
+    const remainingSec = totalAllocatedSec - (pastSpentSec + elapsed);
+    if (remainingSec <= 0) {
+      setTimeUpTask(task);
+      setShowTimeUpModal(true);
+      setHasPrompted(true);
+    }
+  }, [elapsed, activeSession, tasks, hasPrompted]);
+
+  // Reset prompt flag when session changes
+  useEffect(() => {
+    setHasPrompted(false);
+  }, [activeSession]);
+
   const fetchAllData = () => {
     fetchWithAuth(`${API_URL}/analytics/dashboard`)
       .then((r) => r.ok ? r.json() : null)
@@ -460,6 +532,77 @@ export default function DashboardPage() {
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setTasks(d))
       .catch(() => { });
+  };
+
+  const handleAddMinutes = async (mins: number) => {
+    if (!timeUpTask) return;
+    try {
+      const res = await fetchWithAuth(`${API_URL}/tasks/${timeUpTask.id}/status?email=${encodeURIComponent(email)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addMinutes: mins }),
+      });
+      if (res.ok) {
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === timeUpTask.id ? { ...t, estimatedMinutes: (t.estimatedMinutes || 30) + mins } : t
+          )
+        );
+        setShowTimeUpModal(false);
+        setHasPrompted(false);
+        fetchAllData();
+      } else {
+        alert("Failed to extend task time.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error extending task time.");
+    }
+  };
+
+  const handleFinishTask = async () => {
+    if (!timeUpTask) return;
+    const taskToFinish = timeUpTask;
+    setShowTimeUpModal(false);
+    
+    // 1. Optimistically mark task as completed locally
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskToFinish.id ? { ...t, status: "completed" } : t))
+    );
+
+    try {
+      // 2. Persist completed status to backend
+      await fetchWithAuth(`${API_URL}/tasks/${taskToFinish.id}/status?email=${encodeURIComponent(email)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "completed" }),
+      });
+      // 3. Stop running session (records actual minutes)
+      await stopSession(true);
+      // 4. Fetch all updated data
+      fetchAllData();
+    } catch (e) {
+      console.error("Error completing task:", e);
+    }
+  };
+
+  const toggleTaskStatus = async (taskId: string, currentStatus: string) => {
+    const nextStatus = currentStatus === "completed" ? "pending" : "completed";
+    try {
+      const res = await fetchWithAuth(`${API_URL}/tasks/${taskId}/status?email=${encodeURIComponent(email)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (res.ok) {
+        setTasks((prev) =>
+          prev.map((t) => (t.id === taskId ? { ...t, status: nextStatus } : t))
+        );
+        fetchAllData();
+      }
+    } catch {
+      /* offline */
+    }
   };
 
   const startSession = async (task: Task) => {
@@ -480,7 +623,20 @@ export default function DashboardPage() {
     } catch { /* offline */ }
   };
 
-  const stopSession = async () => {
+  const stopSession = async (forceComplete = false) => {
+    if (!forceComplete && activeSession) {
+      const task = tasks.find((t) => t.id === activeSession);
+      if (task) {
+        const totalSec = (task.estimatedMinutes || 30) * 60;
+        const spentSec = (task.actualMinutesSpent || 0) * 60 + elapsed;
+        if (spentSec >= totalSec) {
+          setTimeUpTask(task);
+          setShowTimeUpModal(true);
+          setHasPrompted(true);
+          return;
+        }
+      }
+    }
     try {
       if (sessionId) {
         await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
@@ -550,19 +706,19 @@ export default function DashboardPage() {
       }
     }
 
-    if (task.status === "in_progress" && (task.actualMinutesSpent || 0) > 0) {
+    if ((task.actualMinutesSpent || 0) > 0) {
       const remM = Math.max(0, (task.estimatedMinutes || 30) - (task.actualMinutesSpent || 0));
       return {
-        label: `${remM}m left of ${task.estimatedMinutes}m · In Progress`,
-        statusText: "In Progress",
+        label: `${remM}m left of ${task.estimatedMinutes}m · Pending`,
+        statusText: "Pending",
         isLive: false,
         isOvertime: false,
       };
     }
 
     return {
-      label: `${task.estimatedMinutes}m · ${formatStatus(task.status)}`,
-      statusText: formatStatus(task.status),
+      label: `${task.estimatedMinutes}m · Pending`,
+      statusText: "Pending",
       isLive: false,
       isOvertime: false,
     };
@@ -789,7 +945,7 @@ export default function DashboardPage() {
               </div>
               {activeSession && (
                 <button
-                  onClick={stopSession}
+                  onClick={() => stopSession()}
                   className="flex items-center gap-2 bg-[#DC2626] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-700 transition-all"
                 >
                   <Square size={13} fill="white" /> Stop
@@ -827,31 +983,61 @@ export default function DashboardPage() {
                       >
                         <div className="flex items-center gap-3">
                           <div
-                            className={`w-3 h-3 rounded-full shrink-0 ${isActive ? "animate-pulse ring-2 ring-[#A0785A]/30" : ""}`}
+                            className={`w-1.5 h-8 rounded-full shrink-0 ${isActive ? "animate-pulse ring-2 ring-[#A0785A]/30" : ""}`}
                             style={{ backgroundColor: task.color || BRAND }}
                           />
+                          <button
+                            onClick={() => toggleTaskStatus(task.id, task.status)}
+                            className="flex items-center gap-2 shrink-0 p-1 hover:bg-[#FAFAF8] rounded-lg transition-colors"
+                            title={task.status === "completed" ? "Mark pending" : "Mark completed"}
+                          >
+                            {task.status === "completed" ? (
+                              <CheckCircle2 size={18} className="text-[#16A34A]" />
+                            ) : (
+                              <Circle size={18} className="text-[#E8E2D9] hover:text-[#A0785A]" />
+                            )}
+                          </button>
                           <div>
-                            <p className="text-sm font-medium text-[#1A1A1A]">{task.title}</p>
                             <p
-                              className={`text-xs flex items-center gap-1 font-medium ${
-                                timeInfo.isOvertime
-                                  ? "text-[#DC2626]"
-                                  : timeInfo.isLive
-                                  ? "text-[#A0785A]"
-                                  : "text-[#6B7280]"
+                              className={`text-sm font-medium ${
+                                task.status === "completed" ? "line-through text-[#6B7280]" : "text-[#1A1A1A]"
                               }`}
                             >
-                              {timeInfo.isLive && (
-                                <Clock size={11} className="text-[#A0785A] animate-pulse" />
-                              )}
-                              {timeInfo.label}
+                              {task.title}
                             </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <p
+                                className={`text-xs flex items-center gap-1 font-medium ${
+                                  timeInfo.isOvertime
+                                    ? "text-[#DC2626]"
+                                    : timeInfo.isLive
+                                    ? "text-[#A0785A]"
+                                    : "text-[#6B7280]"
+                                }`}
+                              >
+                                {timeInfo.isLive && (
+                                  <Clock size={11} className="text-[#A0785A] animate-pulse" />
+                                )}
+                                {timeInfo.label}
+                              </p>
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                  task.status === "completed"
+                                    ? "bg-green-50 text-[#16A34A]"
+                                    : isActive
+                                    ? "bg-[#F5EFE8] text-[#A0785A]"
+                                    : "bg-gray-100 text-gray-600"
+                                }`}
+                              >
+                                {isActive ? "In Progress (Live)" : task.status === "completed" ? "Completed" : "Pending"}
+                              </span>
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
                           {isActive ? (
                             <button
-                              onClick={stopSession}
+                              onClick={() => stopSession()}
                               className="flex items-center gap-1.5 text-xs text-white bg-[#DC2626] px-3 py-1.5 rounded-lg hover:bg-red-700 transition-all font-semibold shadow-sm"
                             >
                               <Square size={10} fill="white" /> Stop
@@ -876,6 +1062,44 @@ export default function DashboardPage() {
           </div>
         </main>
       </div>
+
+      {/* Task Time Reached Modal */}
+      {showTimeUpModal && timeUpTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A1A]/45 p-6">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-[#E8E2D9] p-6 shadow-2xl">
+            <h2 className="font-heading text-lg font-semibold text-[#1A1A1A] mb-2">Task Time Reached</h2>
+            <p className="mb-5 text-sm text-[#6B7280]">
+              The planned {timeUpTask.estimatedMinutes} minutes for &ldquo;{timeUpTask.title}&rdquo; have elapsed.
+              Add more time or finish the task?
+            </p>
+            <div className="flex flex-wrap gap-2 mb-5">
+              {[5, 10, 15, 30].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => handleAddMinutes(m)}
+                  className="px-4 py-2 bg-[#A0785A] text-white rounded-xl text-sm font-medium hover:bg-[#7D5C42]"
+                >
+                  +{m}m
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => { setShowTimeUpModal(false); setHasPrompted(false); }}
+                className="px-4 py-2 border border-[#E8E2D9] text-[#6B7280] rounded-xl text-sm hover:bg-[#FAFAF8]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFinishTask}
+                className="flex items-center gap-2 px-4 py-2 bg-[#16A34A] text-white rounded-xl text-sm font-medium hover:bg-[#15803D]"
+              >
+                <CheckCircle2 size={15} /> Finish Task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

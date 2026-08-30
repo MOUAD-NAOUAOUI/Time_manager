@@ -30,18 +30,28 @@ public class TimeSessionController {
     }
 
     @GetMapping("/active")
-    public ResponseEntity<SessionResponse> getActiveSession(Authentication authentication) {
-        if (authentication == null || authentication.getName() == null) {
+    public ResponseEntity<SessionResponse> getActiveSession(
+            Authentication authentication,
+            @RequestParam(required = false) String email) {
+        String targetEmail = (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : email;
+        if (targetEmail == null || targetEmail.isBlank()) {
             return ResponseEntity.ok(null);
         }
-        return sessionService.getActiveSession(authentication.getName())
+        return sessionService.getActiveSession(targetEmail)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.ok(null));
     }
 
     @PutMapping("/{id}/stop")
-    public ResponseEntity<SessionResponse> stopSession(@PathVariable UUID id,
-            Authentication authentication) {
-        return ResponseEntity.ok(sessionService.stopSession(id, authentication.getName()));
+    public ResponseEntity<SessionResponse> stopSession(
+            @PathVariable UUID id,
+            Authentication authentication,
+            @RequestParam(required = false) String email) {
+        String targetEmail = (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : email;
+        return ResponseEntity.ok(sessionService.stopSession(id, targetEmail));
     }
 }

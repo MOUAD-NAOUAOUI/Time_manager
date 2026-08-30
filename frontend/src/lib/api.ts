@@ -19,7 +19,16 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}): Pro
     ...getAuthHeaders(),
     ...(options.headers || {}),
   };
-  return fetch(url, { ...options, headers });
+  try {
+    return await fetch(url, { ...options, headers });
+  } catch (error) {
+    console.warn(`[fetchWithAuth] Request to ${url} failed:`, error);
+    return new Response(JSON.stringify({ error: "Network request failed" }), {
+      status: 503,
+      statusText: "Service Unavailable",
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }
 
 export function logout(navigate: (path: string) => void) {

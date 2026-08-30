@@ -221,29 +221,31 @@ export default function TasksPage() {
     }
   };
 
-// Handler to finish task
+  // Handler to finish task
   const handleFinishTask = async () => {
     if (!timeUpTask) return;
+    const taskToFinish = timeUpTask;
     setShowTimeUpModal(false);
-    // forceComplete=true skips the modal re-check
-    await stopSession(true);
+    
+    // 1. Optimistically update local UI state to completed
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskToFinish.id ? { ...t, status: "completed" } : t))
+    );
+
     try {
       const email = getUserEmail();
-      const res = await fetchWithAuth(`${API_URL}/tasks/${timeUpTask.id}/status?email=${encodeURIComponent(email)}`, {
+      // 2. Persist completed status to backend
+      await fetchWithAuth(`${API_URL}/tasks/${taskToFinish.id}/status?email=${encodeURIComponent(email)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "completed" }),
       });
-      if (res.ok) {
-        setTasks((prev) =>
-          prev.map((t) => (t.id === timeUpTask.id ? { ...t, status: "completed" } : t))
-        );
-      } else {
-        alert("Failed to complete task.");
-      }
+      // 3. Stop running session (records actual minutes)
+      await stopSession(true);
+      // 4. Fetch latest data from backend
+      fetchTasks();
     } catch (e) {
-      console.error(e);
-      alert("Error completing task.");
+      console.error("Error completing task:", e);
     }
   };
 
@@ -349,17 +351,17 @@ export default function TasksPage() {
       }
     }
 
-    if (task.status === "in_progress" && (task.actualMinutesSpent || 0) > 0) {
+    if ((task.actualMinutesSpent || 0) > 0) {
       const remM = Math.max(0, (task.estimatedMinutes || 30) - (task.actualMinutesSpent || 0));
       return {
-        label: `${remM}m left of ${task.estimatedMinutes}m · In Progress`,
+        label: `${remM}m left of ${task.estimatedMinutes}m · Pending`,
         isLive: false,
         isOvertime: false,
       };
     }
 
     return {
-      label: `${task.estimatedMinutes}m · ${formatStatus(task.status)}`,
+      label: `${task.estimatedMinutes}m · Pending`,
       isLive: false,
       isOvertime: false,
     };
@@ -1036,12 +1038,12 @@ export default function TasksPage() {
                           className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                             task.status === "completed"
                               ? "bg-green-50 text-[#16A34A]"
-                              : isActive || task.status === "in_progress"
+                              : isActive
                               ? "bg-[#F5EFE8] text-[#A0785A]"
                               : "bg-gray-100 text-gray-600"
                           }`}
                         >
-                          {isActive ? "In Progress (Live)" : formatStatus(task.status)}
+                          {isActive ? "In Progress (Live)" : task.status === "completed" ? "Completed" : "Pending"}
                         </span>
                         {task.recurrence && task.recurrence !== "none" && (
                           <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-[#F5EFE8] text-[#A0785A] border border-[#A0785A]/25 capitalize">

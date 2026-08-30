@@ -90,6 +90,9 @@ public class TimeSessionService {
             Task task = session.getTask();
             int previousMinutes = task.getActualMinutesSpent() != null ? task.getActualMinutesSpent() : 0;
             task.setActualMinutesSpent(previousMinutes + session.getDurationMinutes());
+            if (!"completed".equals(task.getStatus())) {
+                task.setStatus("pending");
+            }
             taskRepository.save(task);
         }
 

@@ -127,7 +127,9 @@ public class ScheduleController {
             @RequestParam String date,
             Authentication authentication) {
 
-        String resolvedEmail = authentication.getName();
+        String resolvedEmail = (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : email;
 
         LocalDate localDate = LocalDate.parse(date);
         Schedule schedule = schedulePersistenceService.getScheduleByDate(resolvedEmail, localDate)

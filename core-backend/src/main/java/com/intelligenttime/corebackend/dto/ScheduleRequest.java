@@ -16,6 +16,12 @@ public class ScheduleRequest {
     private String date;
     private String timezone = "UTC";
 
+    @com.fasterxml.jackson.annotation.JsonProperty("sleep_start")
+    private String sleepStart = "22:00";
+
+    @com.fasterxml.jackson.annotation.JsonProperty("sleep_end")
+    private String sleepEnd = "06:00";
+
     public ScheduleRequest() {}
 
     public String getUserEmail()                         { return userEmail; }
@@ -35,4 +41,10 @@ public class ScheduleRequest {
 
     public String getTimezone()                          { return timezone; }
     public void setTimezone(String timezone)             { this.timezone = timezone; }
+
+    public String getSleepStart()                        { return sleepStart; }
+    public void setSleepStart(String sleepStart)         { this.sleepStart = sleepStart; }
+
+    public String getSleepEnd()                          { return sleepEnd; }
+    public void setSleepEnd(String sleepEnd)             { this.sleepEnd = sleepEnd; }
 }

@@ -129,6 +129,13 @@ The expected workflow is:
             - [x] Python Multi-Factor Productivity Scorer (`services/productivity_scorer.py` + `POST /analytics/productivity-score`) — assesses completion rate, time accuracy, deep work ratio & burnout risk - done
             - [x] Python User Estimation Memory & Calibration Engine (`services/memory_service.py` + `POST /analytics/estimation-bias`) — computes bias factors & auto-padding multipliers - done
             - [x] Python Hierarchical Milestone Goal Decomposer (`services/goal_decomposer.py` + `POST /analytics/decompose-advanced`) — resolves milestone dependencies & critical path - done
+            - [x] 8-Hour Circadian Sleep Scheduling & Optimization Engine — interactive configuration modal, distinct Midnight Indigo (`#1E1B4B`) visual block, waking-hours calculation, and scientific circadian validation (glymphatic clearance, REM stages 6–8 deficit warning, peak 11 PM – 3 AM slow-wave window guidance, schedule overload protection) - done
+            - [x] User Sleep Preferences Persistence (`PUT /users/sleep`, `GET /users/me`, database migrations in `schema.sql` and `init.sql`) - done
+            - [x] Micro-Task (10–15 min) Habit Engine — automated transition slotting in `constraint_scheduler.py`, low-cognitive-friction scheduling, and "Quick-Win" timeline badging - done
+            - [x] Task Completion Tracking & Accurate Analytics (`completedAt` timestamp in `Task.java`, `TaskResponse.java`, `AnalyticsService.java` daily completion metric accuracy) - done
+            - [x] Full Task Update Endpoint (`PUT /tasks/{id}` in `TaskController.java` & `TaskService.java`) - done
+            - [x] Timezone & Robust Schedule Parser — `formatLocalDate()` local calendar alignment, crash-proof `toMinutes()` parsing, and automatic snake_case / camelCase `normalizeBlock` mapper - done
+            - [x] Comprehensive 38-File System Documentation Suite in `project-docs/` (System Context, Architecture, Services, Data Models, Sequence Flows, Operations, and Mermaid diagrams) - done
 13. Unit Testing - done
     - [x] `UserServiceTest.java` (User registration & duplicate prevention & login brute-force lock unit tests) - done
     - [x] `TaskServiceTest.java` (Task creation, user tasks retrieval, status lifecycle & ownership tests) - done

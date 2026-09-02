@@ -43,26 +43,39 @@ public class ScheduleController {
     @PostMapping("/generate")
     public ResponseEntity<ScheduleResponse> generateSchedule(
             @Valid @RequestBody ScheduleRequest request,
-            Authentication authentication) {
-        String email = authentication.getName();
-        request.setUserEmail(email);
-        if (request.getTimezone() == null || request.getTimezone().isBlank() || "UTC".equals(request.getTimezone())) {
-            userRepository.findByEmail(email).ifPresent(u -> {
+            Authentication authentication,
+            @RequestParam(required = false) String email) {
+        String resolvedEmail = (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : (request.getUserEmail() != null && !request.getUserEmail().isBlank() ? request.getUserEmail() : email);
+        if (resolvedEmail == null || resolvedEmail.isBlank()) {
+            resolvedEmail = "user@example.com";
+        }
+        request.setUserEmail(resolvedEmail);
+        final String finalEmail = resolvedEmail;
+        userRepository.findByEmail(finalEmail).ifPresent(u -> {
+            if (request.getTimezone() == null || request.getTimezone().isBlank() || "UTC".equals(request.getTimezone())) {
                 if (u.getTimezone() != null && !u.getTimezone().isBlank()) {
                     request.setTimezone(u.getTimezone());
                 }
-            });
-        }
+            }
+            if (u.getSleepStartTime() != null && !u.getSleepStartTime().isBlank()) {
+                request.setSleepStart(u.getSleepStartTime());
+            }
+            if (u.getSleepEndTime() != null && !u.getSleepEndTime().isBlank()) {
+                request.setSleepEnd(u.getSleepEndTime());
+            }
+        });
         if (request.getTasks() == null || request.getTasks().isEmpty()) {
-            request.setTasks(mapToScheduleTaskItems(taskService.getUserTasks(email)));
+            request.setTasks(mapToScheduleTaskItems(taskService.getUserTasks(finalEmail)));
         }
 
         ScheduleResponse response = aiClientService.generateSchedule(request);
 
-        if (email != null && !email.isBlank()) {
+        if (!finalEmail.isBlank()) {
             LocalDate targetDate = request.getDate() != null ? LocalDate.parse(request.getDate()) : LocalDate.now();
             schedulePersistenceService.saveOrUpdateSchedule(
-                    email, targetDate, response,
+                    finalEmail, targetDate, response,
                     request.getStartHour(),
                     request.getEndHour());
         }
@@ -74,29 +87,40 @@ public class ScheduleController {
     public ResponseEntity<ScheduleResponse> scheduleToday(
             @RequestParam(defaultValue = "9") int startHour,
             @RequestParam(defaultValue = "18") int endHour,
+            @RequestParam(required = false) String email,
             Authentication authentication) {
 
-        String userEmail = authentication != null ? authentication.getName() : null;
-        List<TaskResponse> userTasks = taskService.getUserTasks(userEmail);
+        String userEmail = (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : email;
+        if (userEmail == null || userEmail.isBlank()) {
+            userEmail = "user@example.com";
+        }
+        final String finalEmail = userEmail;
+        List<TaskResponse> userTasks = taskService.getUserTasks(finalEmail);
 
         ScheduleRequest scheduleRequest = new ScheduleRequest();
-        scheduleRequest.setUserEmail(userEmail);
+        scheduleRequest.setUserEmail(finalEmail);
         scheduleRequest.setStartHour(startHour);
         scheduleRequest.setEndHour(endHour);
-        if (userEmail != null) {
-            userRepository.findByEmail(userEmail).ifPresent(u -> {
-                if (u.getTimezone() != null && !u.getTimezone().isBlank()) {
-                    scheduleRequest.setTimezone(u.getTimezone());
-                }
-            });
-        }
+        userRepository.findByEmail(finalEmail).ifPresent(u -> {
+            if (u.getTimezone() != null && !u.getTimezone().isBlank()) {
+                scheduleRequest.setTimezone(u.getTimezone());
+            }
+            if (u.getSleepStartTime() != null && !u.getSleepStartTime().isBlank()) {
+                scheduleRequest.setSleepStart(u.getSleepStartTime());
+            }
+            if (u.getSleepEndTime() != null && !u.getSleepEndTime().isBlank()) {
+                scheduleRequest.setSleepEnd(u.getSleepEndTime());
+            }
+        });
         scheduleRequest.setTasks(mapToScheduleTaskItems(userTasks));
 
         ScheduleResponse response = aiClientService.generateSchedule(scheduleRequest);
 
-        if (userEmail != null && !userEmail.isBlank()) {
+        if (!finalEmail.isBlank()) {
             schedulePersistenceService.saveOrUpdateSchedule(
-                    userEmail, LocalDate.now(), response, startHour, endHour);
+                    finalEmail, LocalDate.now(), response, startHour, endHour);
         }
 
         return ResponseEntity.ok(response);

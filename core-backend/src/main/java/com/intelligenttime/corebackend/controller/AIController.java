@@ -108,7 +108,7 @@ public class AIController {
     @PostMapping("/coach/analyze")
     public ResponseEntity<Map<String, Object>> analyzeCoach(
             @RequestBody Map<String, Object> request, Authentication authentication) {
-        String email = getAuthenticatedEmail(authentication);
+        String email = resolveEmail(authentication, (String) request.get("user_email"));
         return ResponseEntity.ok(aiClientService.analyzeCoach(email,
                 ((Number) request.getOrDefault("total_tasks", 0)).intValue(),
                 ((Number) request.getOrDefault("completed_tasks", 0)).intValue(),
@@ -119,7 +119,7 @@ public class AIController {
     @SuppressWarnings("unchecked")
     public ResponseEntity<Map<String, Object>> productivityScore(
             @RequestBody Map<String, Object> request, Authentication authentication) {
-        String email = getAuthenticatedEmail(authentication);
+        String email = resolveEmail(authentication, (String) request.get("user_email"));
         List<Map<String, Object>> records = (List<Map<String, Object>>) request.getOrDefault("records", List.of());
         int focus = ((Number) request.getOrDefault("total_focus_minutes", 0)).intValue();
         return ResponseEntity.ok(aiClientService.calculateProductivity(email, records, focus));
@@ -128,16 +128,23 @@ public class AIController {
     @PostMapping("/analytics/decompose-advanced")
     public ResponseEntity<Map<String, Object>> decomposeAdvanced(
             @RequestBody Map<String, Object> request, Authentication authentication) {
-        String email = getAuthenticatedEmail(authentication);
+        String email = resolveEmail(authentication, (String) request.get("user_email"));
         String goal = String.valueOf(request.getOrDefault("goal", ""));
         double hours = ((Number) request.getOrDefault("target_hours", 8)).doubleValue();
         return ResponseEntity.ok(aiClientService.decomposeAdvanced(email, goal, hours));
     }
 
     private String getAuthenticatedEmail(Authentication authentication) {
-        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
-            throw new UnauthorizedException("Authentication token required for AI operations");
+        return resolveEmail(authentication, null);
+    }
+
+    private String resolveEmail(Authentication authentication, String fallbackEmail) {
+        if (authentication != null && authentication.getName() != null && !authentication.getName().isBlank()) {
+            return authentication.getName();
         }
-        return authentication.getName();
+        if (fallbackEmail != null && !fallbackEmail.isBlank()) {
+            return fallbackEmail;
+        }
+        throw new UnauthorizedException("Authentication token or user email required for AI operations");
     }
 }

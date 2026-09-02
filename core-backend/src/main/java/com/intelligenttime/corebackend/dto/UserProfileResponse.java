@@ -10,6 +10,8 @@ public class UserProfileResponse {
     private ZonedDateTime createdAt;
     private String plan;
     private String subscriptionStatus;
+    private String sleepStartTime;
+    private String sleepEndTime;
 
     public UserProfileResponse() {}
 
@@ -20,6 +22,12 @@ public class UserProfileResponse {
         this.createdAt = createdAt;
         this.plan = plan;
         this.subscriptionStatus = subscriptionStatus;
+    }
+
+    public UserProfileResponse(UUID id, String email, String timezone, ZonedDateTime createdAt, String plan, String subscriptionStatus, String sleepStartTime, String sleepEndTime) {
+        this(id, email, timezone, createdAt, plan, subscriptionStatus);
+        this.sleepStartTime = sleepStartTime;
+        this.sleepEndTime = sleepEndTime;
     }
 
     public UUID getId() { return id; }
@@ -39,4 +47,10 @@ public class UserProfileResponse {
 
     public String getSubscriptionStatus() { return subscriptionStatus; }
     public void setSubscriptionStatus(String subscriptionStatus) { this.subscriptionStatus = subscriptionStatus; }
+
+    public String getSleepStartTime() { return sleepStartTime; }
+    public void setSleepStartTime(String sleepStartTime) { this.sleepStartTime = sleepStartTime; }
+
+    public String getSleepEndTime() { return sleepEndTime; }
+    public void setSleepEndTime(String sleepEndTime) { this.sleepEndTime = sleepEndTime; }
 }

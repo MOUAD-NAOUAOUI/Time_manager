@@ -80,7 +80,15 @@ public class TaskService {
         }
 
         if (request.getStatus() != null && !request.getStatus().isBlank()) {
-            task.setStatus(request.getStatus());
+            String newStatus = request.getStatus();
+            task.setStatus(newStatus);
+            if ("completed".equalsIgnoreCase(newStatus)) {
+                if (task.getCompletedAt() == null) {
+                    task.setCompletedAt(java.time.ZonedDateTime.now());
+                }
+            } else {
+                task.setCompletedAt(null);
+            }
         }
         if (request.getAddMinutes() != null && request.getAddMinutes() > 0) {
             int currentEst = task.getEstimatedMinutes() != null ? task.getEstimatedMinutes() : 30;
@@ -90,6 +98,44 @@ public class TaskService {
         }
         if (request.getActualMinutesSpent() != null) {
             task.setActualMinutesSpent(request.getActualMinutesSpent());
+        }
+
+        return mapToResponse(taskRepository.save(task));
+    }
+
+    @Transactional
+    public TaskResponse updateTask(UUID taskId, String email, CreateTaskRequest request) {
+        Task task = taskRepository.findById(Objects.requireNonNull(taskId))
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
+
+        User user = findUserByEmail(email);
+        if (!task.getUser().getId().equals(user.getId())) {
+            throw new UnauthorizedException("You do not own this task");
+        }
+
+        if (request.getTitle() != null && !request.getTitle().isBlank()) {
+            task.setTitle(request.getTitle());
+        }
+        if (request.getColor() != null) {
+            task.setColor(request.getColor());
+        }
+        if (request.getEstimatedMinutes() != null && request.getEstimatedMinutes() > 0) {
+            task.setEstimatedMinutes(request.getEstimatedMinutes());
+        }
+        if (request.getDeadline() != null) {
+            task.setDeadline(request.getDeadline());
+        }
+        if (request.getPriority() != null) {
+            task.setPriority(request.getPriority());
+        }
+        if (request.getEnergyRequired() != null) {
+            task.setEnergyRequired(request.getEnergyRequired());
+        }
+        if (request.getCategory() != null) {
+            task.setCategory(request.getCategory());
+        }
+        if (request.getRecurrence() != null) {
+            task.setRecurrence(request.getRecurrence());
         }
 
         return mapToResponse(taskRepository.save(task));
@@ -129,6 +175,7 @@ public class TaskService {
                 task.getPriority(),
                 task.getEnergyRequired(),
                 task.getCategory(),
-                task.getRecurrence());
+                task.getRecurrence(),
+                task.getCompletedAt());
     }
 }

@@ -75,7 +75,12 @@ public class AnalyticsService {
 
             int dayTasks = (int) tasks.stream()
                     .filter(t -> "completed".equalsIgnoreCase(t.getStatus()))
-                    .filter(t -> t.getCreatedAt() != null && t.getCreatedAt().toLocalDate().isEqual(date))
+                    .filter(t -> {
+                        if (t.getCompletedAt() != null) {
+                            return t.getCompletedAt().toLocalDate().isEqual(date);
+                        }
+                        return t.getCreatedAt() != null && t.getCreatedAt().toLocalDate().isEqual(date);
+                    })
                     .count();
 
             metrics.add(new DailyMetricDTO(dayName, date.toString(), dayFocus, dayTasks));

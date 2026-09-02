@@ -25,4 +25,17 @@ public class UserController {
         UserProfileResponse profile = userService.getUserProfile(targetEmail);
         return ResponseEntity.ok(profile);
     }
+
+    @PutMapping("/sleep")
+    public ResponseEntity<UserProfileResponse> updateSleepPreferences(
+            @jakarta.validation.Valid @RequestBody com.intelligenttime.corebackend.dto.SleepPreferencesRequest request,
+            Authentication authentication,
+            @RequestParam(required = false) String email) {
+        String targetEmail = (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : email;
+        UserProfileResponse profile = userService.updateSleepPreferences(
+                targetEmail, request.getSleepStartTime(), request.getSleepEndTime());
+        return ResponseEntity.ok(profile);
+    }
 }

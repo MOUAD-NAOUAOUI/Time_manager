@@ -22,6 +22,12 @@ public class User {
     @Column(name = "timezone")
     private String timezone = "UTC";
 
+    @Column(name = "sleep_start_time")
+    private String sleepStartTime = "22:00";
+
+    @Column(name = "sleep_end_time")
+    private String sleepEndTime = "06:00";
+
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now();
 
@@ -36,6 +42,12 @@ public class User {
 
     public String getTimezone() { return timezone; }
     public void setTimezone(String timezone) { this.timezone = timezone; }
+
+    public String getSleepStartTime() { return sleepStartTime; }
+    public void setSleepStartTime(String sleepStartTime) { this.sleepStartTime = sleepStartTime; }
+
+    public String getSleepEndTime() { return sleepEndTime; }
+    public void setSleepEndTime(String sleepEndTime) { this.sleepEndTime = sleepEndTime; }
 
     public ZonedDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(ZonedDateTime createdAt) { this.createdAt = createdAt; }

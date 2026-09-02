@@ -50,6 +50,9 @@ public class Task {
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now();
 
+    @Column(name = "completed_at")
+    private ZonedDateTime completedAt;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -88,4 +91,7 @@ public class Task {
 
     public ZonedDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(ZonedDateTime createdAt) { this.createdAt = createdAt; }
+
+    public ZonedDateTime getCompletedAt() { return completedAt; }
+    public void setCompletedAt(ZonedDateTime completedAt) { this.completedAt = completedAt; }
 }

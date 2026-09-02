@@ -20,6 +20,8 @@ class ScheduleRequest(BaseModel):
     end_hour: Optional[int] = 18
     date: Optional[str] = None
     timezone: Optional[str] = "UTC"
+    sleep_start: Optional[str] = "22:00"
+    sleep_end: Optional[str] = "06:00"
 
 class TimeBlock(BaseModel):
     task_id: Optional[str] = None

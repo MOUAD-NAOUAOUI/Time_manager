@@ -16,6 +16,7 @@ public class TaskResponse {
     private String energyRequired;
     private String category;
     private String recurrence = "none";
+    private ZonedDateTime completedAt;
 
     public TaskResponse() {
     }
@@ -46,6 +47,13 @@ public class TaskResponse {
             String energyRequired, String category, String recurrence) {
         this(id, title, color, estimatedMinutes, deadline, status, createdAt, actualMinutesSpent, priority, energyRequired, category);
         this.recurrence = recurrence != null ? recurrence : "none";
+    }
+
+    public TaskResponse(UUID id, String title, String color, Integer estimatedMinutes, ZonedDateTime deadline,
+            String status, ZonedDateTime createdAt, Integer actualMinutesSpent, String priority,
+            String energyRequired, String category, String recurrence, ZonedDateTime completedAt) {
+        this(id, title, color, estimatedMinutes, deadline, status, createdAt, actualMinutesSpent, priority, energyRequired, category, recurrence);
+        this.completedAt = completedAt;
     }
 
     public UUID getId() {
@@ -142,5 +150,13 @@ public class TaskResponse {
 
     public void setRecurrence(String recurrence) {
         this.recurrence = recurrence;
+    }
+
+    public ZonedDateTime getCompletedAt() {
+        return completedAt;
+    }
+
+    public void setCompletedAt(ZonedDateTime completedAt) {
+        this.completedAt = completedAt;
     }
 }

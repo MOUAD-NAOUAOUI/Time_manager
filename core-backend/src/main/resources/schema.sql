@@ -9,8 +9,13 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     timezone VARCHAR(100) DEFAULT 'UTC',
     role VARCHAR(50) DEFAULT 'ROLE_USER',
+    sleep_start_time VARCHAR(10) DEFAULT '22:00',
+    sleep_end_time VARCHAR(10) DEFAULT '06:00',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sleep_start_time VARCHAR(10) DEFAULT '22:00';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sleep_end_time VARCHAR(10) DEFAULT '06:00';
 
 -- 2. Subscriptions Table
 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -35,13 +40,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     energy_required VARCHAR(20) NOT NULL DEFAULT 'medium',
     category VARCHAR(100) DEFAULT 'general',
     color VARCHAR(20) DEFAULT '#A0785A',
-    recurrence VARCHAR(50) NOT NULL DEFAULT 'none',
     deadline TIMESTAMP WITH TIME ZONE,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    completed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence VARCHAR(50) NOT NULL DEFAULT 'none';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;
 
 -- 4. Time Sessions Table
 CREATE TABLE IF NOT EXISTS time_sessions (

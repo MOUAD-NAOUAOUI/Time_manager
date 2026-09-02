@@ -14,7 +14,9 @@ def schedule_generate(request: ScheduleRequest):
         start_hour=request.start_hour or 9,
         end_hour=request.end_hour or 18,
         schedule_date_str=request.date,
-        user_timezone=request.timezone or "UTC"
+        user_timezone=request.timezone or "UTC",
+        sleep_start=request.sleep_start or "22:00",
+        sleep_end=request.sleep_end or "06:00"
     )
     explanation = generate_schedule_explanation(blocks, metrics)
     return ScheduleResponse(

@@ -38,6 +38,18 @@ public class TaskController {
         return ResponseEntity.ok(taskService.getUserTasks(targetEmail));
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<TaskResponse> updateTask(
+            @PathVariable("id") UUID taskId,
+            @Valid @RequestBody CreateTaskRequest request,
+            Authentication authentication,
+            @RequestParam(required = false) String email) {
+        String targetEmail = (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : email;
+        return ResponseEntity.ok(taskService.updateTask(taskId, targetEmail, request));
+    }
+
     @PatchMapping("/{id}/status")
     public ResponseEntity<TaskResponse> updateTaskStatus(
             @PathVariable("id") UUID taskId,

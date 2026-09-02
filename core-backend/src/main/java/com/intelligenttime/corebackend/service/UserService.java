@@ -115,6 +115,26 @@ public class UserService {
         String plan = subscription != null ? subscription.getPlan() : "free";
         String status = subscription != null ? subscription.getStatus() : "inactive";
         return new UserProfileResponse(user.getId(), user.getEmail(),
-                user.getTimezone(), user.getCreatedAt(), plan, status);
+                user.getTimezone(), user.getCreatedAt(), plan, status,
+                user.getSleepStartTime(), user.getSleepEndTime());
+    }
+
+    @Transactional
+    public UserProfileResponse updateSleepPreferences(String email, String sleepStartTime, String sleepEndTime) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
+        if (sleepStartTime != null && !sleepStartTime.isBlank()) {
+            user.setSleepStartTime(sleepStartTime);
+        }
+        if (sleepEndTime != null && !sleepEndTime.isBlank()) {
+            user.setSleepEndTime(sleepEndTime);
+        }
+        User saved = userRepository.save(user);
+        Subscription subscription = subscriptionRepository.findByUser(saved).orElse(null);
+        String plan = subscription != null ? subscription.getPlan() : "free";
+        String status = subscription != null ? subscription.getStatus() : "inactive";
+        return new UserProfileResponse(saved.getId(), saved.getEmail(),
+                saved.getTimezone(), saved.getCreatedAt(), plan, status,
+                saved.getSleepStartTime(), saved.getSleepEndTime());
     }
 }

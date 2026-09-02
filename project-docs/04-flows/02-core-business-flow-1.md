@@ -1,0 +1,49 @@
+# Core Business Flow 1: Live Focus Session & Overtime Management
+
+## 1. Flow Overview
+This flow governs how users start a task timer, track elapsed time in real time, handle overtime situations, and conclude sessions.
+
+## 2. Step-by-Step Description
+1. User clicks **Start** on a task in Dashboard or Tasks page.
+2. Frontend calls `POST /sessions` with `taskId`.
+3. Java backend records session start and updates task status to `in_progress`.
+4. Frontend initiates a 1-second `setInterval` timer measuring elapsed seconds.
+5. When remaining time reaches `0m`, the **Task Time Reached** modal appears with options:
+   - Add `+5m`, `+10m`, `+15m`, or `+30m` (sends `PATCH /tasks/{id}/status` with `{ addMinutes: N }`).
+   - Click **Finish Task** (optimistically updates UI to completed -> sends `PATCH /tasks/{id}/status` with `{ status: 'completed' }` -> stops session -> refreshes data).
+6. If the user stops the timer before completing, task status resets to `pending` (never left in stale `in_progress`).
+
+## 3. Sequence Diagram
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Frontend as Next.js UI
+    participant Backend as Spring Boot API
+    participant DB as PostgreSQL
+
+    User->>Frontend: Clicks "Start" on Task
+    Frontend->>Backend: POST /sessions {taskId}
+    Backend->>DB: INSERT INTO time_sessions (start_time)
+    Backend->>DB: UPDATE tasks SET status = 'in_progress'
+    Backend-->>Frontend: 200 OK {sessionId, startTime}
+    Frontend->>Frontend: Start local countdown timer
+
+    Note over Frontend: Timer reaches 0m remaining (Overtime)
+    Frontend->>Frontend: Open "Task Time Reached" Modal
+
+    alt User clicks "+10m"
+        Frontend->>Backend: PATCH /tasks/{id}/status {addMinutes: 10}
+        Backend->>DB: UPDATE tasks SET estimated_minutes = estimated_minutes + 10
+        Backend-->>Frontend: 200 OK
+        Frontend->>Frontend: Resume countdown with 10 added minutes
+    else User clicks "Finish Task"
+        Frontend->>Frontend: Optimistic UI update (Green Checkmark)
+        Frontend->>Backend: PATCH /tasks/{id}/status {status: "completed"}
+        Backend->>DB: UPDATE tasks SET status = 'completed'
+        Frontend->>Backend: PUT /sessions/{sessionId}/stop
+        Backend->>DB: UPDATE time_sessions SET end_time = NOW()
+        Backend-->>Frontend: 200 OK
+        Frontend-->>User: Display Task Completed & Updated Stats
+    end
+```

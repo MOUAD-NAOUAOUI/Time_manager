@@ -1,0 +1,27 @@
+%% Container Diagram for TimeSpace
+flowchart TB
+    User([Web User])
+
+    subgraph UserDevice [User Workstation]
+        SPA[Next.js 16 Web Application\nReact 19, Tailwind CSS v4, Recharts\nPort 3000]
+    end
+
+    subgraph ServerEnvironment [Backend Infrastructure]
+        JavaAPI[Core Backend Service\nSpring Boot 3.2, Java 17/21\nPort 8080]
+        PythonAI[AI Microservice\nFastAPI, Groq SDK, Uvicorn\nPort 8000]
+        Postgres[(PostgreSQL 16 Database\n+ pgvector extension\nPort 5432)]
+        RedisCache[(Redis In-Memory Cache\nRate Limiting & Sessions\nPort 6379)]
+    end
+
+    subgraph ExternalCloud [External Cloud APIs]
+        Groq[Groq LLM Cloud API]
+        Stripe[Stripe API]
+    end
+
+    User -->|HTTPS / Browser| SPA
+    SPA -->|JSON / REST / JWT Bearer| JavaAPI
+    JavaAPI -->|JPA / JDBC / SQL| Postgres
+    JavaAPI -->|Redis Protocol / Jedis| RedisCache
+    JavaAPI -->|Internal HTTP / Bearer Token| PythonAI
+    PythonAI -->|REST / HTTPS| Groq
+    JavaAPI -->|REST / HTTPS| Stripe

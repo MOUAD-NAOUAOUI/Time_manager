@@ -1,0 +1,14 @@
+%% System Context Diagram for TimeSpace
+flowchart TD
+    User([End User / Knowledge Worker])
+    
+    subgraph TimeSpaceSystem [TimeSpace Intelligent System]
+        Core[TimeSpace Application Platform]
+    end
+    
+    GroqCloud[Groq Cloud LLM API\nllama-3.3-70b / gpt-oss-120b]
+    StripeAPI[Stripe Billing & Subscription API]
+    
+    User -->|Tracks sessions, creates tasks, views coaching| Core
+    Core -->|Sends LLM prompts for reasoning & coaching| GroqCloud
+    Core -->|Processes customer checkout & subscription webhooks| StripeAPI

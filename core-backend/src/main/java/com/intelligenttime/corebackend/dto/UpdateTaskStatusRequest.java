@@ -1,6 +1,5 @@
 package com.intelligenttime.corebackend.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
 public class UpdateTaskStatusRequest {

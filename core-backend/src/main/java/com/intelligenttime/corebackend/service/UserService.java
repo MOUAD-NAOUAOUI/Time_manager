@@ -16,6 +16,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Objects;
+
 @Service
 public class UserService {
     private static final String DEFAULT_CLIENT_IP = "localhost";
@@ -129,7 +131,7 @@ public class UserService {
         if (sleepEndTime != null && !sleepEndTime.isBlank()) {
             user.setSleepEndTime(sleepEndTime);
         }
-        User saved = userRepository.save(user);
+        User saved = userRepository.save(Objects.requireNonNull(user));
         Subscription subscription = subscriptionRepository.findByUser(saved).orElse(null);
         String plan = subscription != null ? subscription.getPlan() : "free";
         String status = subscription != null ? subscription.getStatus() : "inactive";

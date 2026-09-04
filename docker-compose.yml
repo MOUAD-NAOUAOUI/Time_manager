@@ -30,8 +30,6 @@ services:
       - PORT=${AI_SERVICE_PORT:-8000}
     ports:
       - "${AI_SERVICE_PORT:-8000}:8000"
-    depends_on:
-      - postgres
     restart: unless-stopped
 
 volumes:

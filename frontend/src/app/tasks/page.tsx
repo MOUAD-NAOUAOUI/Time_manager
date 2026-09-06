@@ -264,10 +264,20 @@ export default function TasksPage() {
         setSessionId(d.id);
         setElapsed(0);
         setTasks((prev) =>
-          prev.map((t) => (t.id === task.id ? { ...t, status: "in_progress" } : t))
+          prev.map((t) =>
+            t.id === task.id
+              ? { ...t, status: "in_progress" }
+              : (t.status === "in_progress" ? { ...t, status: "pending" } : t)
+          )
         );
+        fetchTasks();
+      } else {
+        const err = await res.text();
+        console.error("Failed to start session:", err);
       }
-    } catch { /* offline */ }
+    } catch (e) {
+      console.error("Error starting session:", e);
+    }
   };
 
   const stopSession = async (forceComplete = false) => {

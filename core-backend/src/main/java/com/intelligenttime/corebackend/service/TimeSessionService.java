@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.time.ZonedDateTime;
 import java.util.UUID;
@@ -37,8 +38,31 @@ public class TimeSessionService {
     public SessionResponse startSession(StartSessionRequest request) {
         User user = userRepository.findByEmail(request.getUserEmail())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.getUserEmail()));
-        if (sessionRepository.existsByUserIdAndStatus(user.getId(), "running")) {
-            throw new BadRequestException("A time session is already running");
+
+        // Auto-finalize any previously running sessions for this user so they are never blocked
+        List<TimeSession> runningSessions = sessionRepository.findAllByUserIdAndStatus(user.getId(), "running");
+        for (TimeSession prevSession : runningSessions) {
+            ZonedDateTime now = ZonedDateTime.now();
+            prevSession.setEndTime(now);
+            prevSession.setStatus("completed");
+            if (prevSession.getStartTime() != null) {
+                long seconds = Duration.between(prevSession.getStartTime(), now).getSeconds();
+                int durationMinutes = (int) Math.round(seconds / 60.0);
+                if (seconds >= 15 && durationMinutes == 0) {
+                    durationMinutes = 1;
+                }
+                prevSession.setDurationMinutes(durationMinutes);
+                if (prevSession.getTask() != null) {
+                    Task prevTask = prevSession.getTask();
+                    int previousMinutes = prevTask.getActualMinutesSpent() != null ? prevTask.getActualMinutesSpent() : 0;
+                    prevTask.setActualMinutesSpent(previousMinutes + durationMinutes);
+                    if (!"completed".equals(prevTask.getStatus())) {
+                        prevTask.setStatus("pending");
+                    }
+                    taskRepository.save(prevTask);
+                }
+            }
+            sessionRepository.save(prevSession);
         }
 
         TimeSession session = new TimeSession();
@@ -106,7 +130,7 @@ public class TimeSessionService {
         if (user == null) {
             return java.util.Optional.empty();
         }
-        return sessionRepository.findByUserIdAndStatus(user.getId(), "running")
+        return sessionRepository.findFirstByUserIdAndStatusOrderByStartTimeDesc(user.getId(), "running")
                 .map(this::mapToResponse);
     }
 

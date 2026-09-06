@@ -7,10 +7,20 @@ import {
 } from "recharts";
 import {
   Clock, CheckCircle2, Circle, Target, Zap, Plus, Play, Square,
-  Brain, ChevronRight, Award
+  Brain, ChevronRight, Award, Moon, AlertCircle, X, Sparkles, Check, Info, Calendar
 } from "lucide-react";
 import { API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
+import {
+  ScheduledItem,
+  HourCellDetail,
+  SleepConfig,
+  DEFAULT_SLEEP_CONFIG,
+  buildWeeklyHourGrid,
+  validateSlot,
+  findNearestAvailableSlot,
+  formatLocalDate,
+} from "@/lib/scheduling";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Task {
@@ -90,18 +100,410 @@ function StatCard({
   );
 }
 
-const formatLocalDate = (d: Date) => {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
+function HourDetailModal({
+  cell,
+  onClose,
+  tasks,
+  onToggleTask,
+  onScheduleItem,
+  cellMap,
+  sleepConfig,
+}: {
+  cell: HourCellDetail | null;
+  onClose: () => void;
+  tasks: Task[];
+  onToggleTask?: (taskId: string, currentStatus: string) => void;
+  onScheduleItem: (item: ScheduledItem, dateKey: string) => void;
+  cellMap: Map<string, HourCellDetail>;
+  sleepConfig: SleepConfig;
+}) {
+  const [selectedTaskId, setSelectedTaskId] = useState<string>("");
+  const [customTitle, setCustomTitle] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState<number>(30);
+  const [startHour, setStartHour] = useState<number>(cell ? cell.hour : 9);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [nearbySuggestions, setNearbySuggestions] = useState<number[]>([]);
+  const [scheduleSuccess, setScheduleSuccess] = useState(false);
 
-function WeeklyHourGrid({ tasks, schedules }: { tasks: Task[]; schedules: Record<string, WeeklySchedule> }) {
+  useEffect(() => {
+    if (cell) {
+      setStartHour(cell.hour);
+      const free = cell.remainingFreeMinutes > 0 ? Math.min(30, cell.remainingFreeMinutes) : 30;
+      setDurationMinutes(free > 0 ? free : 30);
+      setValidationError(null);
+      setNearbySuggestions([]);
+      setScheduleSuccess(false);
+    }
+  }, [cell]);
+
+  // Live slot validation whenever startHour or durationMinutes changes
+  useEffect(() => {
+    if (!cell) return;
+    const res = validateSlot(cell.dateKey, startHour, durationMinutes, cellMap, sleepConfig);
+    if (!res.isValid) {
+      setValidationError(res.message || "This time slot is occupied.");
+      setNearbySuggestions(res.nearbyHours || []);
+    } else {
+      setValidationError(null);
+      setNearbySuggestions([]);
+    }
+  }, [cell, startHour, durationMinutes, cellMap, sleepConfig]);
+
+  if (!cell) return null;
+
+  const handleAutoAssign = () => {
+    const slot = findNearestAvailableSlot(cell.dateKey, cell.hour, durationMinutes, cellMap, sleepConfig);
+    if (slot !== null) {
+      setStartHour(slot);
+    }
+  };
+
+  const handleScheduleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const chosenTask = tasks.find((t) => t.id === selectedTaskId);
+    const title = chosenTask ? chosenTask.title : customTitle.trim();
+    if (!title) {
+      setValidationError("Please select a task or enter a task title.");
+      return;
+    }
+
+    const validation = validateSlot(cell.dateKey, startHour, durationMinutes, cellMap, sleepConfig);
+    if (!validation.isValid) {
+      setValidationError(validation.message || "This time slot is occupied.");
+      setNearbySuggestions(validation.nearbyHours || []);
+      return;
+    }
+
+    const newItem: ScheduledItem = {
+      id: `manual_${Date.now()}`,
+      taskId: chosenTask?.id,
+      title,
+      durationMinutes,
+      startHour,
+      status: chosenTask?.status === "completed" ? "completed" : "pending",
+      color: chosenTask?.color || BRAND,
+      deadline: chosenTask?.deadline,
+    };
+
+    onScheduleItem(newItem, cell.dateKey);
+    setScheduleSuccess(true);
+    setTimeout(() => {
+      onClose();
+    }, 800);
+  };
+
+  const statusBadge = () => {
+    switch (cell.status) {
+      case "sleep":
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#EEF2FF] text-[#4338CA] border border-[#C7D2FE]">
+            <Moon size={12} /> Circadian Sleep (Rest & Recovery)
+          </span>
+        );
+      case "completed":
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#E8F8EE] text-[#16A34A] border border-[#BFE8C8]">
+            <CheckCircle2 size={12} /> Completed
+          </span>
+        );
+      case "missed":
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#FDE8E8] text-[#DC2626] border border-[#F4B8B8]">
+            <AlertCircle size={12} /> Missed / Overdue
+          </span>
+        );
+      case "scheduled":
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1]">
+            <Clock size={12} /> Scheduled
+          </span>
+        );
+      default:
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#F9FAFB] text-[#6B7280] border border-[#E5E7EB]">
+            Empty Hour
+          </span>
+        );
+    }
+  };
+
+  const bookedPercent = Math.min(100, Math.round((cell.totalBookedMinutes / 60) * 100));
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-[#E8E2D9] max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+        {/* Header */}
+        <div className="flex items-start justify-between pb-4 border-b border-[#F0EBE3]">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Calendar size={14} className="text-[#A0785A]" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#6B7280]">{cell.dayLabel}</span>
+              <span className="text-xs text-[#9CA3AF]">•</span>
+              <span className="text-xs text-[#6B7280]">{cell.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+            </div>
+            <h3 className="font-heading text-lg font-700 text-[#1A1A1A]">{cell.timeRangeLabel}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-[#9CA3AF] hover:text-[#1A1A1A] p-1.5 rounded-lg hover:bg-[#F5EFE8] transition-colors"
+            title="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Status & Capacity Gauge */}
+        <div className="py-4 border-b border-[#F0EBE3] space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-[#6B7280]">Status</span>
+            {statusBadge()}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between text-xs mb-1.5">
+              <span className="text-[#6B7280]">Capacity booked</span>
+              <span className="font-semibold text-[#1A1A1A]">
+                {cell.totalBookedMinutes} min / 60 min ({cell.remainingFreeMinutes} min free)
+              </span>
+            </div>
+            <div className="w-full bg-[#F1F1F1] rounded-full h-2.5 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  cell.status === "sleep"
+                    ? "bg-[#6366F1]"
+                    : cell.status === "completed"
+                    ? "bg-[#16A34A]"
+                    : cell.status === "missed"
+                    ? "bg-[#DC2626]"
+                    : "bg-[#A0785A]"
+                }`}
+                style={{ width: `${bookedPercent}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Scheduled Items List */}
+        <div className="py-4 border-b border-[#F0EBE3]">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6B7280] mb-3">
+            Scheduled Items ({cell.items.length})
+          </h4>
+
+          {cell.items.length === 0 ? (
+            <p className="text-xs text-[#9CA3AF] italic py-2">No tasks scheduled in this hour slot.</p>
+          ) : (
+            <div className="space-y-2">
+              {cell.items.map((item, idx) => (
+                <div
+                  key={item.id || idx}
+                  className="flex items-center justify-between p-3 rounded-xl bg-[#FAFAF8] border border-[#E8E2D9]"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-white border border-[#E8E2D9] text-[#1A1A1A] shrink-0">
+                      {item.durationMinutes} min
+                    </span>
+                    <span className="text-sm font-medium text-[#1A1A1A] truncate">{item.title}</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {item.isSleep ? (
+                      <span className="text-[11px] font-semibold text-[#4338CA] bg-[#EEF2FF] px-2 py-0.5 rounded-md">
+                        Sleep
+                      </span>
+                    ) : (
+                      <>
+                        <span
+                          className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                            item.status === "completed"
+                              ? "text-[#16A34A] bg-[#E8F8EE]"
+                              : item.status === "missed"
+                              ? "text-[#DC2626] bg-[#FDE8E8]"
+                              : "text-[#475569] bg-[#F1F5F9]"
+                          }`}
+                        >
+                          {item.status === "completed" ? "Done" : item.status === "missed" ? "Missed" : "Pending"}
+                        </span>
+                        {item.taskId && onToggleTask && (
+                          <button
+                            type="button"
+                            onClick={() => onToggleTask(item.taskId!, item.status)}
+                            className="p-1 rounded text-[#6B7280] hover:text-[#16A34A] hover:bg-green-50 transition-colors"
+                            title={item.status === "completed" ? "Mark as pending" : "Mark as completed"}
+                          >
+                            <CheckCircle2 size={16} className={item.status === "completed" ? "text-[#16A34A]" : ""} />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Schedule Form */}
+        {cell.status !== "sleep" && (
+          <div className="pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                Schedule Task into this Day
+              </h4>
+              {cell.remainingFreeMinutes > 0 && (
+                <span className="text-xs font-medium text-[#16A34A] bg-green-50 px-2 py-0.5 rounded-md">
+                  {cell.remainingFreeMinutes}m free in this hour
+                </span>
+              )}
+            </div>
+
+            {scheduleSuccess ? (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-xs flex items-center gap-2">
+                <Check size={14} className="text-green-600 shrink-0" />
+                <span>Task scheduled successfully! Updating map...</span>
+              </div>
+            ) : (
+              <form onSubmit={handleScheduleSubmit} className="space-y-3">
+                {/* Select Task or Custom */}
+                <div>
+                  <label className="block text-xs font-medium text-[#6B7280] mb-1">Select Existing Task</label>
+                  <select
+                    value={selectedTaskId}
+                    onChange={(e) => {
+                      setSelectedTaskId(e.target.value);
+                      const t = tasks.find((item) => item.id === e.target.value);
+                      if (t) {
+                        setDurationMinutes(t.estimatedMinutes || 30);
+                        setCustomTitle("");
+                      }
+                    }}
+                    className="w-full text-xs rounded-xl border border-[#E8E2D9] p-2.5 bg-white text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#A0785A]/20"
+                  >
+                    <option value="">-- Choose existing task or write custom below --</option>
+                    {tasks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title} ({t.estimatedMinutes}m) · {t.status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {!selectedTaskId && (
+                  <div>
+                    <label className="block text-xs font-medium text-[#6B7280] mb-1">Custom Task Title</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Reading books, Shower, Deep Work"
+                      value={customTitle}
+                      onChange={(e) => setCustomTitle(e.target.value)}
+                      className="w-full text-xs rounded-xl border border-[#E8E2D9] p-2.5 bg-white text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#A0785A]/20"
+                    />
+                  </div>
+                )}
+
+                {/* Duration Picker */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-[#6B7280]">Duration (minutes)</label>
+                    <span className="text-xs font-bold text-[#A0785A]">{durationMinutes} min</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[15, 30, 45, 60, 90, 120, 180].map((mins) => (
+                      <button
+                        type="button"
+                        key={mins}
+                        onClick={() => setDurationMinutes(mins)}
+                        className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${
+                          durationMinutes === mins
+                            ? "bg-[#A0785A] text-white border-[#A0785A]"
+                            : "bg-white text-[#6B7280] border-[#E8E2D9] hover:bg-[#F5EFE8]"
+                        }`}
+                      >
+                        {mins >= 60 ? `${mins / 60}h` : `${mins}m`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Start Hour Selector */}
+                <div>
+                  <label className="block text-xs font-medium text-[#6B7280] mb-1">Start Hour</label>
+                  <select
+                    value={startHour}
+                    onChange={(e) => setStartHour(Number(e.target.value))}
+                    className="w-full text-xs rounded-xl border border-[#E8E2D9] p-2.5 bg-white text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#A0785A]/20"
+                  >
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <option key={h} value={h}>
+                        {String(h).padStart(2, "0")}:00 ({String(h).padStart(2, "0")}:00 – {String((h + 1) % 24).padStart(2, "0")}:00)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Validation Error Banner */}
+                {validationError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-2">
+                    <div className="flex items-start gap-2 text-xs text-red-700">
+                      <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
+                      <span>{validationError}</span>
+                    </div>
+                    {nearbySuggestions.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-red-200/60">
+                        <span className="text-[11px] text-red-600 font-medium">Switch to nearby:</span>
+                        {nearbySuggestions.map((h) => (
+                          <button
+                            type="button"
+                            key={h}
+                            onClick={() => setStartHour(h)}
+                            className="text-[11px] font-semibold bg-white text-red-700 border border-red-300 px-2 py-0.5 rounded hover:bg-red-100 transition-colors"
+                          >
+                            {String(h).padStart(2, "0")}:00
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Submit and Auto-assign buttons */}
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={!!validationError}
+                    className="flex-1 text-xs py-2.5 px-4 rounded-xl font-semibold text-white bg-[#A0785A] hover:bg-[#7D5C42] disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer"
+                  >
+                    Schedule Task
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAutoAssign}
+                    className="text-xs py-2.5 px-3 rounded-xl font-medium text-[#A0785A] border border-[#A0785A]/40 hover:bg-[#F5EFE8] transition-all shrink-0 flex items-center gap-1 cursor-pointer"
+                    title="Find closest free window automatically"
+                  >
+                    <Sparkles size={13} /> Auto-Assign Slot
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WeeklyHourGrid({
+  tasks,
+  schedules,
+  userSleep = DEFAULT_SLEEP_CONFIG,
+  onToggleTask,
+}: {
+  tasks: Task[];
+  schedules: Record<string, WeeklySchedule>;
+  userSleep?: SleepConfig;
+  onToggleTask?: (taskId: string, currentStatus: string) => void;
+}) {
   const today = new Date();
-  const todayKey = formatLocalDate(today);
-  const currentHour = today.getHours();
-
   const weekStart = new Date(today);
   weekStart.setHours(0, 0, 0, 0);
   weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
@@ -111,91 +513,188 @@ function WeeklyHourGrid({ tasks, schedules }: { tasks: Task[]; schedules: Record
     return date;
   });
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
+
+  const email = getUserEmail();
+  const [manualItems, setManualItems] = useState<Record<string, ScheduledItem[]>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const key = `timespace_manual_schedule_${email}`;
+        const saved = localStorage.getItem(key);
+        if (saved) return JSON.parse(saved);
+      } catch { /* ignore */ }
+    }
+    return {};
+  });
+
+  const saveManualItem = (item: ScheduledItem, dateKey: string) => {
+    setManualItems((prev) => {
+      const existing = prev[dateKey] || [];
+      const updated = {
+        ...prev,
+        [dateKey]: [...existing, item],
+      };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`timespace_manual_schedule_${email}`, JSON.stringify(updated));
+        } catch { /* ignore */ }
+      }
+      return updated;
+    });
+  };
+
   const taskById = new Map(tasks.map((task) => [task.id, task]));
 
-  const getCell = (date: Date, hour: number) => {
-    const dayKey = formatLocalDate(date);
+  const scheduledItemsByDay: Record<string, ScheduledItem[]> = {};
 
-    // 1. Explicit scheduled blocks from AI schedule
-    const block = schedules[dayKey]?.schedule?.find((candidate) => {
-      const startHour = Number(candidate.startTime?.split(":")[0]);
-      const endHour = Number(candidate.endTime?.split(":")[0]);
-      return hour >= startHour && hour < endHour;
-    });
-    if (block) {
-      const task = block.taskId ? taskById.get(block.taskId) : undefined;
-      const completed = task?.status === "completed" ||
+  for (const date of days) {
+    const dKey = formatLocalDate(date);
+    const list: ScheduledItem[] = [];
+
+    // 1. Explicit items from backend schedule
+    const backendBlocks = schedules[dKey]?.schedule || [];
+    for (const b of backendBlocks) {
+      const startH = Number(b.startTime?.split(":")[0]) || 0;
+      const endH = Number(b.endTime?.split(":")[0]) || (startH + 1);
+      const startM = Number(b.startTime?.split(":")[1]) || 0;
+      const endM = Number(b.endTime?.split(":")[1]) || 0;
+      const durationMins = (endH * 60 + endM) - (startH * 60 + startM);
+      const task = b.taskId ? taskById.get(b.taskId) : undefined;
+      const isCompleted = task?.status === "completed" ||
         ((task?.actualMinutesSpent ?? 0) >= (task?.estimatedMinutes ?? 0) * 0.8);
-      return completed
-        ? { tone: "bg-[#BFE8C8]", label: `${block.title} (Completed)` }
-        : { tone: "bg-[#F4B8B8]", label: `${block.title} (Scheduled)` };
+
+      list.push({
+        id: b.taskId || `block_${dKey}_${startH}`,
+        taskId: b.taskId,
+        title: b.title,
+        durationMinutes: Math.max(5, durationMins > 0 ? durationMins : 60),
+        startHour: startH,
+        startMinute: startM,
+        status: isCompleted ? "completed" : (task?.status === "in_progress" ? "in_progress" : "pending"),
+        color: task?.color || "#A0785A",
+        deadline: task?.deadline,
+      });
     }
 
-    // 2. Deadline tasks matching this day and hour
-    const deadlineTask = tasks.find((t) => {
-      if (!t.deadline) return false;
+    // 2. Manual items scheduled from UI
+    if (manualItems[dKey]) {
+      list.push(...manualItems[dKey]);
+    }
+
+    // 3. Deadline tasks matching this date if not already included
+    for (const t of tasks) {
+      if (!t.deadline) continue;
       const dStr = t.deadline.slice(0, 10);
-      if (dStr !== dayKey) return false;
-      if (t.deadline.includes("T")) {
-        const dHour = new Date(t.deadline).getHours();
-        return dHour === hour;
-      }
-      return hour === 17;
-    });
-    if (deadlineTask) {
-      const completed = deadlineTask.status === "completed";
-      return completed
-        ? { tone: "bg-[#BFE8C8]", label: `${deadlineTask.title} (Completed)` }
-        : { tone: "bg-[#F4B8B8]", label: `${deadlineTask.title} (Deadline)` };
-    }
-
-    // 3. Map all tasks to work hours on today
-    if (dayKey === todayKey && tasks.length > 0) {
-      const startWorkHour = 9;
-      if (hour >= startWorkHour && hour < startWorkHour + tasks.length) {
-        const task = tasks[hour - startWorkHour];
-        if (task) {
-          const completed = task.status === "completed";
-          return completed
-            ? { tone: "bg-[#BFE8C8]", label: `${task.title} (Complete)` }
-            : { tone: "bg-[#F4B8B8]", label: `${task.title} (Incomplete)` };
-        }
+      if (dStr === dKey && !list.some((it) => it.taskId === t.id)) {
+        const dHour = t.deadline.includes("T") ? new Date(t.deadline).getHours() : 17;
+        list.push({
+          id: t.id,
+          taskId: t.id,
+          title: t.title,
+          durationMinutes: t.estimatedMinutes || 30,
+          startHour: isNaN(dHour) ? 17 : dHour,
+          status: t.status === "completed" ? "completed" : "pending",
+          color: t.color || "#A0785A",
+          deadline: t.deadline,
+        });
       }
     }
 
-    return { tone: "bg-[#F1F1F1]", label: "Empty" };
-  };
+    scheduledItemsByDay[dKey] = list;
+  }
+
+  const cellMap = buildWeeklyHourGrid(days, scheduledItemsByDay, userSleep, new Date());
+
+  const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
+  const selectedCell = selectedCellKey ? cellMap.get(selectedCellKey) || null : null;
 
   return (
     <section className="bg-white rounded-2xl border border-[#E8E2D9] p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
-          <h2 className="font-heading font-600 text-[#1A1A1A]">Weekly Hour Map</h2>
-          <p className="text-xs text-[#6B7280] mt-1">Every hour, from Monday through Sunday</p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-heading font-600 text-[#1A1A1A]">Weekly Hour Map</h2>
+            <span className="text-[11px] font-semibold text-[#A0785A] bg-[#F5EFE8] px-2 py-0.5 rounded-md">
+              Interactive 7×24
+            </span>
+          </div>
+          <p className="text-xs text-[#6B7280] mt-1">Every hour from Monday through Sunday · Click any cell to inspect or schedule</p>
         </div>
-        <div className="flex items-center gap-4 text-xs text-[#6B7280]">
-          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-sm bg-[#BFE8C8]" /> Complete</span>
-          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-sm bg-[#F4B8B8]" /> Incomplete</span>
-          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-sm bg-[#F1F1F1]" /> Empty</span>
+        <div className="flex items-center gap-3.5 text-xs text-[#6B7280] flex-wrap">
+          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-xs bg-[#BFE8C8] border border-[#A3D9AE]" /> Complete</span>
+          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-xs bg-[#F4B8B8] border border-[#E89E9E]" /> Missed</span>
+          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-xs bg-[#E2E8F0] border border-[#CBD5E1]" /> Scheduled</span>
+          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-xs bg-[#EEF2FF] border border-[#C7D2FE]" /> Sleep</span>
+          <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-xs bg-[#F1F1F1]" /> Empty</span>
         </div>
       </div>
+
       <div className="overflow-x-auto">
         <div className="min-w-[900px]">
+          {/* Hour Numbers Header */}
           <div className="grid grid-cols-[72px_repeat(24,minmax(32px,1fr))] gap-1 mb-1">
             <div />
-            {hours.map((hour) => <div key={hour} className="text-center text-[10px] text-[#6B7280]">{String(hour).padStart(2, "0")}</div>)}
+            {hours.map((hour) => (
+              <div key={hour} className="text-center text-[10px] font-medium text-[#6B7280]">
+                {String(hour).padStart(2, "0")}
+              </div>
+            ))}
           </div>
-          {days.map((date) => (
-            <div key={date.toISOString()} className="grid grid-cols-[72px_repeat(24,minmax(32px,1fr))] gap-1 mb-1">
-              <div className="flex items-center text-xs font-semibold text-[#6B7280]">{date.toLocaleDateString("en-US", { weekday: "short" })}</div>
-              {hours.map((hour) => {
-                const cell = getCell(date, hour);
-                return <div key={hour} title={cell.label} className={`h-7 rounded-sm ${cell.tone}`} />;
-              })}
-            </div>
-          ))}
+
+          {/* 7 Days Matrix */}
+          {days.map((date) => {
+            const dateKey = formatLocalDate(date);
+            const isCurrentDay = dateKey === formatLocalDate(today);
+
+            return (
+              <div key={dateKey} className="grid grid-cols-[72px_repeat(24,minmax(32px,1fr))] gap-1 mb-1">
+                <div className={`flex items-center text-xs font-semibold ${isCurrentDay ? "text-[#A0785A]" : "text-[#6B7280]"}`}>
+                  {date.toLocaleDateString("en-US", { weekday: "short" })}
+                  {isCurrentDay && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-[#A0785A]" title="Today" />}
+                </div>
+
+                {hours.map((hour) => {
+                  const cellKey = `${dateKey}_${hour}`;
+                  const cell = cellMap.get(cellKey)!;
+                  const hasMultiple = cell.items.length > 1;
+
+                  return (
+                    <button
+                      type="button"
+                      key={hour}
+                      onClick={() => setSelectedCellKey(cellKey)}
+                      title={cell.label}
+                      className={`h-7 rounded-xs ${cell.tone} relative transition-all duration-150 hover:ring-2 hover:ring-[#A0785A]/50 hover:scale-105 focus:outline-hidden cursor-pointer flex items-center justify-center`}
+                    >
+                      {cell.status === "sleep" ? (
+                        <Moon size={9} className="text-[#6366F1]/50" />
+                      ) : hasMultiple ? (
+                        <div className="flex items-center gap-0.5">
+                          {cell.items.slice(0, 3).map((_, i) => (
+                            <span key={i} className="w-1 h-1 rounded-full bg-[#475569]/70" />
+                          ))}
+                        </div>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       </div>
+
+      {/* Hour Detail Modal */}
+      {selectedCell && (
+        <HourDetailModal
+          cell={selectedCell}
+          onClose={() => setSelectedCellKey(null)}
+          tasks={tasks}
+          onToggleTask={onToggleTask}
+          onScheduleItem={saveManualItem}
+          cellMap={cellMap}
+          sleepConfig={userSleep}
+        />
+      )}
     </section>
   );
 }
@@ -380,6 +879,7 @@ export default function DashboardPage() {
   const [showTimeUpModal, setShowTimeUpModal] = useState(false);
   const [timeUpTask, setTimeUpTask] = useState<Task | null>(null);
   const [hasPrompted, setHasPrompted] = useState(false);
+  const [userSleep, setUserSleep] = useState<SleepConfig>(DEFAULT_SLEEP_CONFIG);
 
   const email = getUserEmail();
 
@@ -420,6 +920,22 @@ export default function DashboardPage() {
             const nowMs = Date.now();
             setElapsed(Math.max(0, Math.floor((nowMs - startMs) / 1000)));
           }
+        }
+      })
+      .catch(() => { });
+
+    // Load user sleep preferences
+    fetchWithAuth(`${API_URL}/users/me?email=${encodeURIComponent(email)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) {
+          const sh = data.sleepStartTime ? parseInt(data.sleepStartTime.split(":")[0], 10) : 22;
+          const eh = data.sleepEndTime ? parseInt(data.sleepEndTime.split(":")[0], 10) : 6;
+          setUserSleep({
+            startHour: isNaN(sh) ? 22 : sh,
+            endHour: isNaN(eh) ? 6 : eh,
+            enabled: true,
+          });
         }
       })
       .catch(() => { });
@@ -775,7 +1291,12 @@ export default function DashboardPage() {
             <StatCard icon={Zap} label="Completion Rate" value={`${analytics?.completionRate?.toFixed(0) || 0}% `} sub="of tasks done" color="#A0785A" />
           </div>
 
-          <WeeklyHourGrid tasks={tasks} schedules={weeklySchedules} />
+          <WeeklyHourGrid
+            tasks={tasks}
+            schedules={weeklySchedules}
+            userSleep={userSleep}
+            onToggleTask={toggleTaskStatus}
+          />
           <GlobalRecords analytics={analytics} />
 
           {/* ── Charts Row (Live Real Database Metrics) ── */}

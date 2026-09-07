@@ -21,6 +21,7 @@ import {
   validateSlot,
   findNearestAvailableSlot,
   formatLocalDate,
+  getValidScheduleDates,
 } from "@/lib/scheduling";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -771,10 +772,11 @@ function WeeklyHourGrid({
   userSleep?: SleepConfig;
   onToggleTask?: (taskId: string, currentStatus: string) => void;
 }) {
+  const [weekOffset, setWeekOffset] = useState(0);
   const today = new Date();
   const weekStart = new Date(today);
   weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7) + weekOffset * 7);
   const days = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(weekStart);
     date.setDate(weekStart.getDate() + index);
@@ -792,7 +794,40 @@ function WeeklyHourGrid({
     try {
       const key = `timespace_manual_schedule_${email}`;
       const saved = localStorage.getItem(key);
-      if (saved) setManualItems(JSON.parse(saved));
+      if (saved) {
+        const parsed: Record<string, ScheduledItem[]> = JSON.parse(saved);
+        // Clean up legacy pending items in the past that caused false "missed" hours
+        const now = new Date();
+        const currentDayKey = formatLocalDate(now);
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        let changed = false;
+
+        const cleaned: Record<string, ScheduledItem[]> = {};
+        for (const [dKey, items] of Object.entries(parsed)) {
+          if (dKey < currentDayKey) {
+            // Past day: retain only completed items
+            const remaining = items.filter((it) => it.status === "completed");
+            if (remaining.length !== items.length) changed = true;
+            if (remaining.length > 0) cleaned[dKey] = remaining;
+          } else if (dKey === currentDayKey) {
+            // Today: retain completed items or items whose start time has not passed yet
+            const remaining = items.filter(
+              (it) => it.status === "completed" || ((it.startHour * 60 + (it.startMinute || 0)) >= nowMinutes)
+            );
+            if (remaining.length !== items.length) changed = true;
+            cleaned[dKey] = remaining;
+          } else {
+            cleaned[dKey] = items;
+          }
+        }
+
+        if (changed) {
+          localStorage.setItem(key, JSON.stringify(cleaned));
+          setManualItems(cleaned);
+        } else {
+          setManualItems(parsed);
+        }
+      }
     } catch { /* ignore */ }
 
     const handleStorage = (e: StorageEvent) => {
@@ -811,10 +846,14 @@ function WeeklyHourGrid({
     dateKeys: string | string[],
     oldItemId?: string
   ) => {
-    const keys = Array.isArray(dateKeys) ? dateKeys : [dateKeys];
+    const rawKeys = Array.isArray(dateKeys) ? dateKeys : [dateKeys];
     const baseId = oldItemId
       ? oldItemId.replace(/_\d{4}-\d{2}-\d{2}$/, "")
       : item.id.replace(/_\d{4}-\d{2}-\d{2}$/, "");
+
+    const startMins = (item.startHour ?? 9) * 60 + (item.startMinute ?? 0);
+    // Apply user rule: never schedule in past of current week; if passed today start tomorrow; schedule next week starting from Monday!
+    const { allDates } = getValidScheduleDates(rawKeys, startMins, new Date(), true);
 
     setManualItems((prev) => {
       const updated = { ...prev };
@@ -828,8 +867,8 @@ function WeeklyHourGrid({
         }
       }
 
-      // Add to each selected day
-      for (const dKey of keys) {
+      // Add to each valid scheduled day
+      for (const dKey of allDates) {
         const existing = updated[dKey] || [];
         const itemForDay: ScheduledItem = {
           ...item,
@@ -937,15 +976,47 @@ function WeeklyHourGrid({
   return (
     <section className="bg-white rounded-2xl border border-[#E8E2D9] p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="font-heading font-600 text-[#1A1A1A]">Weekly Hour Map</h2>
-            <span className="text-[11px] font-semibold text-[#A0785A] bg-[#F5EFE8] px-2 py-0.5 rounded-md">
-              Interactive 7×24
-            </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="font-heading font-600 text-[#1A1A1A]">Weekly Hour Map</h2>
+              {/* Week Navigation */}
+              <div className="flex items-center gap-1.5 bg-[#FAFAF8] border border-[#E8E2D9] rounded-xl p-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset((prev) => prev - 1)}
+                  className="px-2 py-0.5 rounded-lg text-[#6B7280] hover:text-[#1A1A1A] hover:bg-white transition-all font-medium cursor-pointer"
+                  title="Previous week"
+                >
+                  ← Prev
+                </button>
+                <span className="px-2 font-semibold text-[#1A1A1A] text-xs select-none">
+                  {weekOffset === 0
+                    ? "This Week"
+                    : weekOffset === 1
+                    ? "Next Week"
+                    : `${days[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${days[6].toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                </span>
+                {weekOffset !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setWeekOffset(0)}
+                    className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-[#A0785A] text-white hover:bg-[#7D5C42] transition-all cursor-pointer"
+                  >
+                    Current
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset((prev) => prev + 1)}
+                  className="px-2 py-0.5 rounded-lg text-[#6B7280] hover:text-[#1A1A1A] hover:bg-white transition-all font-medium cursor-pointer"
+                  title="Next week"
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-[#6B7280] mt-1">Every hour from Monday through Sunday · Click any cell to inspect, edit, or schedule</p>
           </div>
-          <p className="text-xs text-[#6B7280] mt-1">Every hour from Monday through Sunday · Click any cell to inspect, edit, or schedule</p>
-        </div>
         <div className="flex items-center gap-3.5 text-xs text-[#6B7280] flex-wrap">
           <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-xs bg-[#BFE8C8] border border-[#A3D9AE]" /> Complete</span>
           <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-xs bg-[#F4B8B8] border border-[#E89E9E]" /> Missed</span>

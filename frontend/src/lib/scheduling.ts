@@ -106,6 +106,63 @@ export function isSlotOverdue(date: Date, hour: number, deadline?: string, now: 
 }
 
 /**
+ * Calculates the valid scheduling target dates for a task based on the current date/time.
+ * Rule:
+ * 1. For the current week:
+ *    - Days before today are skipped (cannot schedule in the past of the current week).
+ *    - Today is only included if the slot hasn't already passed (startMinutes >= nowMinutes).
+ *      If today's slot has already passed, we start from tomorrow or next day!
+ *    - Future days of the current week are included.
+ * 2. For the next week:
+ *    - All selected days are scheduled starting from the beginning of next week (Monday..Sunday).
+ */
+export function getValidScheduleDates(
+  selectedDateKeys: string[],
+  startMinutes: number,
+  now: Date = new Date(),
+  includeNextWeek: boolean = true
+): { currentWeekDates: string[]; nextWeekDates: string[]; allDates: string[] } {
+  const currentDayKey = formatLocalDate(now);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const currentWeekDates: string[] = [];
+  const nextWeekDates: string[] = [];
+
+  for (const dKey of selectedDateKeys) {
+    // 1. Current week evaluation
+    if (dKey > currentDayKey) {
+      currentWeekDates.push(dKey);
+    } else if (dKey === currentDayKey) {
+      if (startMinutes >= nowMinutes) {
+        currentWeekDates.push(dKey);
+      }
+      // If startMinutes < nowMinutes: passed today, so do NOT schedule for today in the past!
+    }
+    // If dKey < currentDayKey: passed in current week, do NOT schedule in the past!
+
+    // 2. Next week evaluation
+    if (includeNextWeek) {
+      const [y, m, d] = dKey.split("-").map(Number);
+      const nextDate = new Date(y, m - 1, d + 7);
+      const nextKey = formatLocalDate(nextDate);
+      nextWeekDates.push(nextKey);
+    }
+  }
+
+  // If user only selected today (or no days) and today's slot has already passed:
+  // "if we are in the day but we pass the hours we start from tomorow or next day"
+  if (selectedDateKeys.length <= 1 && currentWeekDates.length === 0) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    const tomorrowKey = formatLocalDate(tomorrow);
+    currentWeekDates.push(tomorrowKey);
+  }
+
+  const allDates = [...currentWeekDates, ...nextWeekDates];
+  return { currentWeekDates, nextWeekDates, allDates };
+}
+
+/**
  * Validates whether a task of given duration can be scheduled starting at startHour on dateKey.
  * For >= 60m: requires requiredHours consecutive free cells.
  * For < 60m: checks if target cell has >= durationMinutes free.

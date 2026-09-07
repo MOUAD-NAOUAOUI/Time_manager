@@ -20,7 +20,8 @@ import {
   Square,
   Pencil,
   Search,
-  Filter
+  Filter,
+  CalendarDays
 } from "lucide-react";
 import { API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
@@ -33,6 +34,7 @@ import {
   checkIntervalConflict,
   getOccupiedIntervalsFromTasks,
   FreeSlotResult,
+  getValidScheduleDates,
 } from "@/lib/scheduling";
 
 interface Task {
@@ -122,6 +124,8 @@ export default function TasksPage() {
     color: "#A0785A",
     startTime: "",
   });
+  // None selected by default — user must explicitly pick days
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
 
   // Edit Task State
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -138,16 +142,97 @@ export default function TasksPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "in_progress" | "completed">("all");
 
+  // 7 Days of the current week (Monday - Sunday)
+  const weekDays = useMemo(() => {
+    const today = new Date();
+    const weekStart = new Date(today);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7)); // Monday
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      const dateKey = formatLocalDate(d);
+      const dayShort = d.toLocaleDateString("en-US", { weekday: "short" });
+      const dayNum = d.getDate();
+      return { date: d, dateKey, dayShort, dayNum, label: `${dayShort} ${dayNum}` };
+    });
+  }, []);
+
+  const handleToggleDay = (dateKey: string) => {
+    setSelectedDays((prev) =>
+      prev.includes(dateKey) ? prev.filter((d) => d !== dateKey) : [...prev, dateKey]
+    );
+  };
+
+  const handleSelectDayPreset = (preset: "clear" | "weekdays" | "all") => {
+    if (preset === "clear") {
+      setSelectedDays([]);
+    } else if (preset === "weekdays") {
+      setSelectedDays(weekDays.slice(0, 5).map((d) => d.dateKey));
+    } else {
+      setSelectedDays(weekDays.map((d) => d.dateKey));
+    }
+  };
+
   // Computed Time Range & Schedule Conflict Evaluation
   const slotEvaluation = useMemo(() => {
     const duration = Math.max(5, Number(manualForm.estimatedMinutes) || 30);
     const dateStr = formatLocalDate(new Date());
     const occupied = getOccupiedIntervalsFromTasks(tasks, dateStr);
 
+    // Build per-day conflict map for the current week
+    const email = getUserEmail();
+    const dayConflictMap: Record<string, boolean> = {};
     if (manualForm.startTime && manualForm.startTime.includes(":")) {
       const startMinutes = parseTimeToMinutes(manualForm.startTime);
       const endMinutes = startMinutes + duration;
-      const hasConflict = checkIntervalConflict(startMinutes, endMinutes, occupied);
+
+      for (const wd of weekDays) {
+        const dKey = wd.dateKey;
+        // Check localStorage scheduled items for this day
+        let dayOccupied: Array<{ start: number; end: number }> = [];
+        if (typeof window !== "undefined" && email) {
+          try {
+            const stored = JSON.parse(localStorage.getItem(`timespace_manual_schedule_${email}`) || "{}");
+            const dayItems: Array<{ startHour: number; startMinute: number; durationMinutes: number }> = stored[dKey] || [];
+            dayOccupied = dayItems.map((it) => ({
+              start: it.startHour * 60 + (it.startMinute || 0),
+              end: it.startHour * 60 + (it.startMinute || 0) + (it.durationMinutes || 30),
+            }));
+          } catch { /* ignore */ }
+        }
+
+        const taskIntervals = getOccupiedIntervalsFromTasks(tasks, dKey);
+        const combined = [...dayOccupied, ...taskIntervals];
+        dayConflictMap[dKey] = checkIntervalConflict(startMinutes, endMinutes, combined);
+      }
+    }
+
+    if (manualForm.startTime && manualForm.startTime.includes(":")) {
+      const startMinutes = parseTimeToMinutes(manualForm.startTime);
+      const endMinutes = startMinutes + duration;
+
+      const now = new Date();
+      const currentDayKey = formatLocalDate(now);
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+      // Only check conflicts for upcoming target days:
+      // Past days in current week or passed hours today are never scheduled in current week!
+      const targetDaysToCheck = selectedDays.length > 0 ? selectedDays : [dateStr];
+      const validUpcomingTargetDays = targetDaysToCheck.filter((dKey) => {
+        if (dKey < currentDayKey) return false;
+        if (dKey === currentDayKey && startMinutes < nowMinutes) return false;
+        return true;
+      });
+
+      const conflictedSelectedDays = validUpcomingTargetDays.filter((dKey) => dayConflictMap[dKey]);
+      const hasConflict = conflictedSelectedDays.length > 0;
+
+      const conflictedDayLabels = weekDays
+        .filter((wd) => conflictedSelectedDays.includes(wd.dateKey))
+        .map((wd) => `${wd.dayShort} ${wd.dayNum}`)
+        .join(", ");
+
       const start12 = formatMinutesTo12Hour(startMinutes);
       const end12 = formatMinutesTo12Hour(endMinutes);
       const start24 = formatMinutesTo24Hour(startMinutes);
@@ -156,6 +241,21 @@ export default function TasksPage() {
       let suggestedSlot: FreeSlotResult | null = null;
       if (hasConflict) {
         suggestedSlot = findNearestFreeSlot(duration, tasks, startMinutes);
+      }
+
+      let scheduleStartNote = "";
+      if (selectedDays.length > 0) {
+        if (selectedDays.includes(currentDayKey) && startMinutes >= nowMinutes) {
+          scheduleStartNote = `(starts today · applies to all ${selectedDays.length} days & next week)`;
+        } else {
+          scheduleStartNote = `(starts tomorrow / next day · full schedule starts next week from Monday)`;
+        }
+      } else {
+        if (startMinutes >= nowMinutes) {
+          scheduleStartNote = "(scheduled for today)";
+        } else {
+          scheduleStartNote = "(starts tomorrow, since today's hour has passed)";
+        }
       }
 
       return {
@@ -169,6 +269,10 @@ export default function TasksPage() {
         end24,
         formattedRange: `${start12} - ${end12}`,
         suggestedSlot,
+        dayConflictMap,
+        conflictedSelectedDays,
+        conflictedDayLabels,
+        scheduleStartNote,
       };
     } else {
       const nearest = findNearestFreeSlot(duration, tasks, null);
@@ -183,9 +287,13 @@ export default function TasksPage() {
         end24: nearest.endTime24,
         formattedRange: nearest.formattedRange,
         suggestedSlot: nearest,
+        dayConflictMap: {},
+        conflictedSelectedDays: [],
+        conflictedDayLabels: "",
+        scheduleStartNote: "(nearest available slot)",
       };
     }
-  }, [manualForm.startTime, manualForm.estimatedMinutes, tasks]);
+  }, [manualForm.startTime, manualForm.estimatedMinutes, tasks, weekDays, selectedDays]);
 
   // AI Assistant Modal State
   const [showAiModal, setShowAiModal] = useState(false);
@@ -258,6 +366,43 @@ export default function TasksPage() {
   useEffect(() => {
     fetchTasks();
     fetchActiveSession();
+
+    // Clean up legacy pending items in the past that caused false "missed" hours
+    const email = getUserEmail();
+    if (email && typeof window !== "undefined") {
+      try {
+        const key = `timespace_manual_schedule_${email}`;
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          const parsed: Record<string, any[]> = JSON.parse(saved);
+          const now = new Date();
+          const currentDayKey = formatLocalDate(now);
+          const nowMinutes = now.getHours() * 60 + now.getMinutes();
+          let changed = false;
+
+          const cleaned: Record<string, any[]> = {};
+          for (const [dKey, items] of Object.entries(parsed)) {
+            if (dKey < currentDayKey) {
+              const remaining = items.filter((it) => it.status === "completed");
+              if (remaining.length !== items.length) changed = true;
+              if (remaining.length > 0) cleaned[dKey] = remaining;
+            } else if (dKey === currentDayKey) {
+              const remaining = items.filter(
+                (it) => it.status === "completed" || ((it.startHour * 60 + (it.startMinute || 0)) >= nowMinutes)
+              );
+              if (remaining.length !== items.length) changed = true;
+              cleaned[dKey] = remaining;
+            } else {
+              cleaned[dKey] = items;
+            }
+          }
+
+          if (changed) {
+            localStorage.setItem(key, JSON.stringify(cleaned));
+          }
+        }
+      } catch { /* ignore */ }
+    }
   }, []);
 
   // Live timer tick
@@ -475,6 +620,15 @@ export default function TasksPage() {
   // 1. Handle Manual Task Creation
   const handleManualCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (slotEvaluation.hasConflict) {
+      alert(
+        `⚠️ Cannot schedule: The selected time slot (${slotEvaluation.formattedRange}) is occupied on: ${
+          slotEvaluation.conflictedDayLabels || "selected day(s)"
+        }.\n\nPlease choose an available time slot or click 'Apply Suggested Time'.`
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const today = new Date();
@@ -498,6 +652,7 @@ export default function TasksPage() {
           color: manualForm.color,
           deadline: deadlineIso,
           userEmail: getUserEmail(),
+          recurrence: selectedDays.length > 1 ? "weekly" : "none",
         }),
       });
       if (res.ok) {
@@ -508,27 +663,46 @@ export default function TasksPage() {
           try {
             const key = `timespace_manual_schedule_${email}`;
             const current = JSON.parse(localStorage.getItem(key) || "{}");
-            const dKey = formatLocalDate(today);
-            const dayList = current[dKey] || [];
-            const newItem = {
-              id: createdTask?.id || `manual_${Date.now()}`,
-              taskId: createdTask?.id,
-              title: manualForm.title,
-              durationMinutes: manualForm.estimatedMinutes,
-              startHour: Math.floor(slotEvaluation.startMinutes / 60),
-              startMinute: slotEvaluation.startMinutes % 60,
-              status: "pending",
-              color: manualForm.color,
-              deadline: deadlineIso,
-            };
-            current[dKey] = [...dayList, newItem];
+            const targetRawDays = selectedDays.length > 0 ? selectedDays : [formatLocalDate(today)];
+            // Apply rule:
+            // 1. Current week: skip past days; if today's hour has passed, start from tomorrow.
+            // 2. Next week: schedule all selected days starting from the beginning (Monday..Sunday)!
+            const { allDates } = getValidScheduleDates(
+              targetRawDays,
+              slotEvaluation.startMinutes,
+              today,
+              true
+            );
+            const baseId = createdTask?.id || `manual_${Date.now()}`;
+
+            for (const dKey of allDates) {
+              const dayList = current[dKey] || [];
+              const newItem = {
+                id: `${baseId}_${dKey}`,
+                taskId: createdTask?.id,
+                title: manualForm.title,
+                durationMinutes: manualForm.estimatedMinutes,
+                startHour: Math.floor(slotEvaluation.startMinutes / 60),
+                startMinute: slotEvaluation.startMinutes % 60,
+                status: "pending",
+                color: manualForm.color,
+                deadline: deadlineIso,
+              };
+              const filtered = dayList.filter(
+                (it: any) =>
+                  it.id !== newItem.id &&
+                  !(it.startHour === newItem.startHour && it.title === newItem.title)
+              );
+              current[dKey] = [...filtered, newItem];
+            }
             localStorage.setItem(key, JSON.stringify(current));
           } catch (storageErr) {
-            console.error("Error storing manual schedule item:", storageErr);
+            console.error("Error storing manual schedule items:", storageErr);
           }
         }
 
         setManualForm({ title: "", estimatedMinutes: 30, color: "#A0785A", startTime: "" });
+        setSelectedDays([]);
         setShowManualForm(false);
         fetchTasks();
       }
@@ -855,6 +1029,140 @@ export default function TasksPage() {
                   </div>
                 </div>
 
+                {/* ── 7 Days of the Week Selection (Not selected by default) ── */}
+                <div className="md:col-span-2 bg-[#FAF7F2] rounded-2xl border border-[#E8E2D9] p-3.5 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-[#1A1A1A] flex items-center gap-1.5">
+                      <CalendarDays size={14} className="text-[#A0785A]" />
+                      Repeat on Days of the Week:
+                      <span
+                        className={`font-semibold px-2 py-0.5 rounded-full text-[11px] ${
+                          selectedDays.length > 0
+                            ? "bg-[#A0785A] text-white"
+                            : "bg-[#E8E2D9]/70 text-[#6B7280]"
+                        }`}
+                      >
+                        {selectedDays.length > 0
+                          ? `${selectedDays.length} of 7 days selected`
+                          : "None selected (default: today)"}
+                      </span>
+                    </label>
+
+                    {/* Quick Presets */}
+                    <div className="flex items-center gap-1">
+                      {selectedDays.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectDayPreset("clear")}
+                          className="text-[10px] px-2 py-1 rounded-md font-semibold bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#DC2626] hover:border-red-300 transition-all cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleSelectDayPreset("weekdays")}
+                        className={`text-[10px] px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                          selectedDays.length === 5 &&
+                          weekDays.slice(0, 5).every((d) => selectedDays.includes(d.dateKey))
+                            ? "bg-[#A0785A] text-white shadow-xs"
+                            : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
+                        }`}
+                      >
+                        Mon–Fri
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectDayPreset("all")}
+                        className={`text-[10px] px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                          selectedDays.length === 7
+                            ? "bg-[#A0785A] text-white shadow-xs"
+                            : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
+                        }`}
+                      >
+                        All 7 days
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* The 7 Day Buttons */}
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {weekDays.map((wd) => {
+                      const isSelected = selectedDays.includes(wd.dateKey);
+                      const isOccupied = !!slotEvaluation.dayConflictMap?.[wd.dateKey];
+                      const now = new Date();
+                      const currentDayKey = formatLocalDate(now);
+                      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+                      const isPastSlot =
+                        wd.dateKey < currentDayKey ||
+                        (wd.dateKey === currentDayKey && slotEvaluation.startMinutes < nowMinutes);
+
+                      return (
+                        <button
+                          key={wd.dateKey}
+                          type="button"
+                          onClick={() => handleToggleDay(wd.dateKey)}
+                          title={`${wd.dayShort} ${wd.dayNum} · ${
+                            manualForm.startTime
+                              ? isPastSlot
+                                ? "Past this week · Starts next week from beginning"
+                                : isOccupied
+                                ? "Slot occupied at this time"
+                                : "Slot free"
+                              : "Click to toggle selection"
+                          }`}
+                          className={`flex flex-col items-center justify-center py-2.5 px-1 rounded-xl border text-xs transition-all cursor-pointer select-none relative ${
+                            isSelected
+                              ? "bg-[#A0785A] text-white border-[#A0785A] shadow-xs ring-1 ring-[#A0785A]"
+                              : "bg-white text-[#4B5563] border-[#E8E2D9] hover:border-[#A0785A]/50 hover:bg-[#FDFBF9]"
+                          }`}
+                        >
+                          {isSelected && (
+                            <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-white text-[#A0785A] flex items-center justify-center shadow-xs">
+                              <Check size={9} strokeWidth={3} />
+                            </div>
+                          )}
+                          <span
+                            className={`text-[10px] font-bold uppercase tracking-wider ${
+                              isSelected ? "text-white" : "text-[#6B7280]"
+                            }`}
+                          >
+                            {wd.dayShort}
+                          </span>
+                          <span
+                            className={`text-sm font-extrabold mt-0.5 ${
+                              isSelected ? "text-white" : "text-[#1A1A1A]"
+                            }`}
+                          >
+                            {wd.dayNum}
+                          </span>
+
+                          {/* Status Dot */}
+                          {manualForm.startTime && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  isPastSlot
+                                    ? isSelected
+                                      ? "bg-amber-200"
+                                      : "bg-slate-300"
+                                    : isOccupied
+                                    ? isSelected
+                                      ? "bg-amber-300"
+                                      : "bg-red-500"
+                                    : isSelected
+                                    ? "bg-emerald-300"
+                                    : "bg-emerald-500"
+                                }`}
+                              />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Time Range Calculation & Collision Warning Banner */}
                 <div className="md:col-span-2">
                   {slotEvaluation.hasConflict ? (
@@ -862,11 +1170,21 @@ export default function TasksPage() {
                       <div className="flex items-start sm:items-center gap-2.5">
                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
                         <div className="text-sm">
-                          <span className="font-semibold text-amber-800">⚠️ Slot occupied.</span>{" "}
-                          Suggested nearest free slot:{" "}
-                          <span className="font-bold text-amber-950">
-                            {slotEvaluation.suggestedSlot?.formattedRange}
-                          </span>
+                          <span className="font-semibold text-amber-800">⚠️ Slot occupied</span>{" "}
+                          <span className="font-bold text-amber-950">({slotEvaluation.formattedRange})</span>
+                          {slotEvaluation.conflictedDayLabels && (
+                            <span className="text-xs text-amber-800 block sm:inline ml-1">
+                              on: <span className="font-semibold underline">{slotEvaluation.conflictedDayLabels}</span>
+                            </span>
+                          )}
+                          {slotEvaluation.suggestedSlot && (
+                            <div className="text-xs text-amber-800 mt-1">
+                              Suggested nearest free slot:{" "}
+                              <span className="font-bold text-amber-950">
+                                {slotEvaluation.suggestedSlot.formattedRange}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                       {slotEvaluation.suggestedSlot && (
@@ -896,6 +1214,9 @@ export default function TasksPage() {
                         <span className="font-bold text-emerald-950">
                           {slotEvaluation.formattedRange}
                         </span>
+                        <span className="text-xs text-emerald-700 ml-2 font-medium">
+                          {slotEvaluation.scheduleStartNote}
+                        </span>
                       </div>
                     </div>
                   ) : (
@@ -910,6 +1231,11 @@ export default function TasksPage() {
                           <span className="text-xs text-[#A0785A] ml-2 font-medium bg-[#A0785A]/10 px-2 py-0.5 rounded-full">
                             Nearest Available
                           </span>
+                          {selectedDays.length > 0 && (
+                            <span className="text-xs text-[#6B7280] ml-2">
+                              (across {selectedDays.length} days)
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

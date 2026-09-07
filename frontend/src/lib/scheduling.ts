@@ -426,3 +426,180 @@ export function buildWeeklyHourGrid(
 
   return cellMap;
 }
+
+// ─── Free Slot Finding & Range Calculation ───────────────────────────────────
+
+export interface FreeSlotResult {
+  startMinutes: number;
+  endMinutes: number;
+  startTime24: string;   // "10:00"
+  endTime24: string;     // "10:30"
+  startTime12: string;   // "10:00 AM"
+  endTime12: string;     // "10:30 AM"
+  formattedRange: string;// "10:00 AM - 10:30 AM"
+}
+
+export function formatMinutesTo12Hour(totalMinutes: number): string {
+  const norm = ((totalMinutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(norm / 60);
+  const minutes = norm % 60;
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const h12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${String(h12).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${ampm}`;
+}
+
+export function formatMinutesTo24Hour(totalMinutes: number): string {
+  const norm = ((totalMinutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(norm / 60);
+  const minutes = norm % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+export function parseTimeToMinutes(timeStr?: string | null): number {
+  if (!timeStr || !timeStr.includes(":")) return 0;
+  const parts = timeStr.trim().split(":");
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+}
+
+export interface TimeInterval {
+  start: number; // in minutes from midnight (0..1440)
+  end: number;
+  title?: string;
+}
+
+/**
+ * Extracts occupied intervals from existing tasks and sleep configuration.
+ */
+export function getOccupiedIntervalsFromTasks(
+  tasks: Array<{
+    id?: string;
+    title?: string;
+    estimatedMinutes?: number;
+    deadline?: string;
+    startTime?: string;
+    endTime?: string;
+  }> = [],
+  dateStr?: string,
+  sleepConfig: SleepConfig = DEFAULT_SLEEP_CONFIG
+): TimeInterval[] {
+  const intervals: TimeInterval[] = [];
+
+  // 1. Add sleep intervals
+  if (sleepConfig.enabled) {
+    if (sleepConfig.startHour > sleepConfig.endHour) {
+      intervals.push({ start: sleepConfig.startHour * 60, end: 1440, title: "Sleep" });
+      intervals.push({ start: 0, end: sleepConfig.endHour * 60, title: "Sleep" });
+    } else {
+      intervals.push({ start: sleepConfig.startHour * 60, end: sleepConfig.endHour * 60, title: "Sleep" });
+    }
+  }
+
+  const targetDateStr = dateStr || formatLocalDate(new Date());
+
+  // 2. Add task intervals
+  for (const t of tasks) {
+    const duration = Math.max(5, t.estimatedMinutes || 30);
+
+    // Explicit startTime
+    if (t.startTime && typeof t.startTime === "string" && t.startTime.includes(":")) {
+      const startM = parseTimeToMinutes(t.startTime);
+      const endM = t.endTime ? parseTimeToMinutes(t.endTime) : startM + duration;
+      intervals.push({ start: startM, end: endM, title: t.title });
+      continue;
+    }
+
+    // Deadline matching target date
+    if (t.deadline && typeof t.deadline === "string" && t.deadline.slice(0, 10) === targetDateStr) {
+      if (t.deadline.includes("T")) {
+        const d = new Date(t.deadline);
+        const deadlineM = d.getHours() * 60 + d.getMinutes();
+        const startM = Math.max(0, deadlineM - duration);
+        intervals.push({ start: startM, end: deadlineM, title: t.title });
+      }
+    }
+  }
+
+  intervals.sort((a, b) => a.start - b.start);
+  return intervals;
+}
+
+/**
+ * Checks if interval [startM, endM] conflicts with any occupied interval.
+ */
+export function checkIntervalConflict(
+  startM: number,
+  endM: number,
+  occupied: TimeInterval[]
+): boolean {
+  for (const occ of occupied) {
+    if (startM < occ.end && endM > occ.start) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Finds the nearest available free time slot big enough to fit durationMinutes.
+ * Searches forward starting from preferredStartMinutes (if provided) or from current time.
+ */
+export function findNearestFreeSlot(
+  durationMinutes: number,
+  existingTasks: any[] = [],
+  preferredStartMinutes?: number | null,
+  referenceDate: Date = new Date(),
+  sleepConfig: SleepConfig = DEFAULT_SLEEP_CONFIG
+): FreeSlotResult {
+  const duration = Math.max(5, durationMinutes || 30);
+  const dateStr = formatLocalDate(referenceDate);
+  const occupied = getOccupiedIntervalsFromTasks(existingTasks, dateStr, sleepConfig);
+
+  let searchStart = 9 * 60; // 09:00 AM
+
+  if (preferredStartMinutes !== undefined && preferredStartMinutes !== null && !isNaN(preferredStartMinutes)) {
+    searchStart = preferredStartMinutes;
+  } else {
+    // Current time rounded up to next 15 minutes
+    const currentM = referenceDate.getHours() * 60 + referenceDate.getMinutes();
+    const roundedM = Math.ceil(currentM / 15) * 15;
+    searchStart = Math.max(9 * 60, roundedM);
+  }
+
+  const step = 15;
+  const maxMinute = (sleepConfig.enabled ? sleepConfig.startHour : 24) * 60;
+
+  // Search forward
+  for (let m = searchStart; m + duration <= maxMinute; m += step) {
+    if (!checkIntervalConflict(m, m + duration, occupied)) {
+      return buildSlotResult(m, m + duration);
+    }
+  }
+
+  // Wrap around earlier in the day
+  for (let m = 9 * 60; m + duration <= searchStart; m += step) {
+    if (!checkIntervalConflict(m, m + duration, occupied)) {
+      return buildSlotResult(m, m + duration);
+    }
+  }
+
+  // Best effort fallback
+  return buildSlotResult(9 * 60, 9 * 60 + duration);
+}
+
+function buildSlotResult(startMinutes: number, endMinutes: number): FreeSlotResult {
+  const s24 = formatMinutesTo24Hour(startMinutes);
+  const e24 = formatMinutesTo24Hour(endMinutes);
+  const s12 = formatMinutesTo12Hour(startMinutes);
+  const e12 = formatMinutesTo12Hour(endMinutes);
+  return {
+    startMinutes,
+    endMinutes,
+    startTime24: s24,
+    endTime24: e24,
+    startTime12: s12,
+    endTime12: e12,
+    formattedRange: `${s12} - ${e12}`,
+  };
+}

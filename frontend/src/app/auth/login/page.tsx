@@ -39,6 +39,10 @@ export default function LoginPage() {
     }
   };
 
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSubmitted, setForgotSubmitted] = useState(false);
+
   return (
     <main className="min-h-screen bg-[#FAFAF8] flex items-center justify-center p-6">
       <div className="w-full max-w-md">
@@ -76,7 +80,17 @@ export default function LoginPage() {
                 <label className="block text-sm font-medium text-[#1A1A1A]" htmlFor="password">
                   Password
                 </label>
-                <a href="#" className="text-xs text-[#A0785A] hover:underline">Forgot password?</a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForgotEmail(form.email || "");
+                    setForgotSubmitted(false);
+                    setShowForgotModal(true);
+                  }}
+                  className="text-xs text-[#A0785A] hover:underline"
+                >
+                  Forgot password?
+                </button>
               </div>
               <div className="relative">
                 <input
@@ -115,6 +129,73 @@ export default function LoginPage() {
             Create one for free
           </Link>
         </p>
+
+        {/* Forgot Password Modal */}
+        {showForgotModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl border border-[#E8E2D9] max-w-md w-full p-6 shadow-xl relative animate-in fade-in zoom-in-95 duration-150">
+              <h3 className="font-heading text-lg font-bold text-[#1A1A1A] mb-2">Reset your password</h3>
+              <p className="text-xs text-[#6B7280] mb-4">
+                Enter the email associated with your TimeSpace account. We will send password reset instructions to your inbox.
+              </p>
+
+              {forgotSubmitted ? (
+                <div className="bg-[#EBF7EE] border border-[#22C55E]/20 text-[#166534] p-4 rounded-xl text-xs flex flex-col gap-2 mb-4">
+                  <p className="font-semibold">Reset instructions dispatched!</p>
+                  <p>If an account exists for <span className="font-mono font-bold">{forgotEmail}</span>, you will receive an email shortly.</p>
+                </div>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!forgotEmail.trim()) return;
+                    setForgotSubmitted(true);
+                  }}
+                  className="space-y-4"
+                >
+                  <div>
+                    <label className="block text-xs font-medium text-[#1A1A1A] mb-1">Email address</label>
+                    <input
+                      type="email"
+                      required
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="w-full px-3 py-2 rounded-lg border border-[#E8E2D9] text-sm text-[#1A1A1A] focus:outline-none focus:border-[#A0785A]"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(false)}
+                      className="px-4 py-2 rounded-lg text-xs font-semibold text-[#6B7280] hover:bg-[#F3EFEA]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#A0785A] text-white hover:bg-[#7D5C42]"
+                    >
+                      Send Instructions
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {forgotSubmitted && (
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#A0785A] text-white hover:bg-[#7D5C42]"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );

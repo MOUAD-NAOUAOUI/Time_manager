@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   Plus,
@@ -17,10 +17,23 @@ import {
   Check,
   Trash2,
   Play,
-  Square
+  Square,
+  Pencil,
+  Search,
+  Filter
 } from "lucide-react";
 import { API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
+import {
+  formatLocalDate,
+  findNearestFreeSlot,
+  parseTimeToMinutes,
+  formatMinutesTo12Hour,
+  formatMinutesTo24Hour,
+  checkIntervalConflict,
+  getOccupiedIntervalsFromTasks,
+  FreeSlotResult,
+} from "@/lib/scheduling";
 
 interface Task {
   id: string;
@@ -31,6 +44,8 @@ interface Task {
   deadline?: string;
   actualMinutesSpent?: number;
   recurrence?: string;
+  priority?: string;
+  category?: string;
 }
 
 interface ExtractedTask {
@@ -105,8 +120,72 @@ export default function TasksPage() {
     title: "",
     estimatedMinutes: 30,
     color: "#A0785A",
-    deadline: "",
+    startTime: "",
   });
+
+  // Edit Task State
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    estimatedMinutes: 30,
+    color: "#A0785A",
+    priority: "medium",
+    recurrence: "none",
+  });
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Search & Filter State
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "in_progress" | "completed">("all");
+
+  // Computed Time Range & Schedule Conflict Evaluation
+  const slotEvaluation = useMemo(() => {
+    const duration = Math.max(5, Number(manualForm.estimatedMinutes) || 30);
+    const dateStr = formatLocalDate(new Date());
+    const occupied = getOccupiedIntervalsFromTasks(tasks, dateStr);
+
+    if (manualForm.startTime && manualForm.startTime.includes(":")) {
+      const startMinutes = parseTimeToMinutes(manualForm.startTime);
+      const endMinutes = startMinutes + duration;
+      const hasConflict = checkIntervalConflict(startMinutes, endMinutes, occupied);
+      const start12 = formatMinutesTo12Hour(startMinutes);
+      const end12 = formatMinutesTo12Hour(endMinutes);
+      const start24 = formatMinutesTo24Hour(startMinutes);
+      const end24 = formatMinutesTo24Hour(endMinutes);
+
+      let suggestedSlot: FreeSlotResult | null = null;
+      if (hasConflict) {
+        suggestedSlot = findNearestFreeSlot(duration, tasks, startMinutes);
+      }
+
+      return {
+        isAuto: false,
+        hasConflict,
+        startMinutes,
+        endMinutes,
+        start12,
+        end12,
+        start24,
+        end24,
+        formattedRange: `${start12} - ${end12}`,
+        suggestedSlot,
+      };
+    } else {
+      const nearest = findNearestFreeSlot(duration, tasks, null);
+      return {
+        isAuto: true,
+        hasConflict: false,
+        startMinutes: nearest.startMinutes,
+        endMinutes: nearest.endMinutes,
+        start12: nearest.startTime12,
+        end12: nearest.endTime12,
+        start24: nearest.startTime24,
+        end24: nearest.endTime24,
+        formattedRange: nearest.formattedRange,
+        suggestedSlot: nearest,
+      };
+    }
+  }, [manualForm.startTime, manualForm.estimatedMinutes, tasks]);
 
   // AI Assistant Modal State
   const [showAiModal, setShowAiModal] = useState(false);
@@ -132,6 +211,22 @@ export default function TasksPage() {
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+
+  // Filtered Tasks computation
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      const matchesSearch = !searchTerm.trim() || t.title.toLowerCase().includes(searchTerm.toLowerCase().trim());
+      const matchesStatus =
+        filterStatus === "all"
+          ? true
+          : filterStatus === "pending"
+          ? t.status === "pending"
+          : filterStatus === "in_progress"
+          ? t.status === "in_progress" || activeSession === t.id
+          : t.status === "completed";
+      return matchesSearch && matchesStatus;
+    });
+  }, [tasks, searchTerm, filterStatus, activeSession]);
 
   const fetchTasks = () => {
     fetchWithAuth(`${API_URL}/tasks`)
@@ -382,12 +477,58 @@ export default function TasksPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      const today = new Date();
+      const endH = Math.floor(slotEvaluation.endMinutes / 60);
+      const endM = slotEvaluation.endMinutes % 60;
+      const deadlineDate = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+        endH,
+        endM,
+        0
+      );
+      const deadlineIso = deadlineDate.toISOString();
+
       const res = await fetchWithAuth(`${API_URL}/tasks`, {
         method: "POST",
-        body: JSON.stringify({ ...manualForm, userEmail: getUserEmail() }),
+        body: JSON.stringify({
+          title: manualForm.title,
+          estimatedMinutes: manualForm.estimatedMinutes,
+          color: manualForm.color,
+          deadline: deadlineIso,
+          userEmail: getUserEmail(),
+        }),
       });
       if (res.ok) {
-        setManualForm({ title: "", estimatedMinutes: 30, color: "#A0785A", deadline: "" });
+        const createdTask = await res.json().catch(() => null);
+
+        const email = getUserEmail();
+        if (email && typeof window !== "undefined") {
+          try {
+            const key = `timespace_manual_schedule_${email}`;
+            const current = JSON.parse(localStorage.getItem(key) || "{}");
+            const dKey = formatLocalDate(today);
+            const dayList = current[dKey] || [];
+            const newItem = {
+              id: createdTask?.id || `manual_${Date.now()}`,
+              taskId: createdTask?.id,
+              title: manualForm.title,
+              durationMinutes: manualForm.estimatedMinutes,
+              startHour: Math.floor(slotEvaluation.startMinutes / 60),
+              startMinute: slotEvaluation.startMinutes % 60,
+              status: "pending",
+              color: manualForm.color,
+              deadline: deadlineIso,
+            };
+            current[dKey] = [...dayList, newItem];
+            localStorage.setItem(key, JSON.stringify(current));
+          } catch (storageErr) {
+            console.error("Error storing manual schedule item:", storageErr);
+          }
+        }
+
+        setManualForm({ title: "", estimatedMinutes: 30, color: "#A0785A", startTime: "" });
         setShowManualForm(false);
         fetchTasks();
       }
@@ -432,6 +573,65 @@ export default function TasksPage() {
       alert("The task could not be deleted. Please try again.");
     } finally {
       setDeletingTaskId(null);
+    }
+  };
+
+  const handleOpenEditModal = (task: Task) => {
+    setEditingTask(task);
+    setEditForm({
+      title: task.title,
+      estimatedMinutes: task.estimatedMinutes || 30,
+      color: task.color || "#A0785A",
+      priority: task.priority || "medium",
+      recurrence: task.recurrence || "none",
+    });
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    setEditLoading(true);
+    try {
+      const email = getUserEmail();
+      const res = await fetchWithAuth(`${API_URL}/tasks/${editingTask.id}?email=${encodeURIComponent(email)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editForm.title,
+          estimatedMinutes: Number(editForm.estimatedMinutes),
+          color: editForm.color,
+          priority: editForm.priority,
+          recurrence: editForm.recurrence,
+          userEmail: email,
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json().catch(() => null);
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === editingTask.id
+              ? {
+                  ...t,
+                  title: editForm.title,
+                  estimatedMinutes: Number(editForm.estimatedMinutes),
+                  color: editForm.color,
+                  priority: editForm.priority,
+                  recurrence: editForm.recurrence,
+                  ...(updated || {}),
+                }
+              : t
+          )
+        );
+        setEditingTask(null);
+      } else {
+        const errText = await res.text();
+        alert("Failed to update task: " + errText);
+      }
+    } catch (err) {
+      console.error("Error updating task:", err);
+      alert("Error updating task. Please check your connection.");
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -630,13 +830,90 @@ export default function TasksPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[#1A1A1A] mb-1.5">Deadline (optional)</label>
-                  <input
-                    type="datetime-local"
-                    value={manualForm.deadline}
-                    onChange={(e) => setManualForm({ ...manualForm, deadline: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-[#E8E2D9] text-sm text-[#1A1A1A] focus:outline-none focus:border-[#A0785A] focus:ring-2 focus:ring-[#A0785A]/15 transition-all"
-                  />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-sm font-medium text-[#1A1A1A]">
+                      Start Time <span className="text-xs text-[#6B7280] font-normal">(optional)</span>
+                    </label>
+                    {manualForm.startTime && (
+                      <button
+                        type="button"
+                        onClick={() => setManualForm((prev) => ({ ...prev, startTime: "" }))}
+                        className="text-xs text-[#A0785A] hover:underline cursor-pointer"
+                      >
+                        Clear (auto-assign)
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Clock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6B7280] pointer-events-none" />
+                    <input
+                      type="time"
+                      value={manualForm.startTime}
+                      onChange={(e) => setManualForm({ ...manualForm, startTime: e.target.value })}
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-[#E8E2D9] text-sm text-[#1A1A1A] focus:outline-none focus:border-[#A0785A] focus:ring-2 focus:ring-[#A0785A]/15 transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Time Range Calculation & Collision Warning Banner */}
+                <div className="md:col-span-2">
+                  {slotEvaluation.hasConflict ? (
+                    <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-start sm:items-center gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                        <div className="text-sm">
+                          <span className="font-semibold text-amber-800">⚠️ Slot occupied.</span>{" "}
+                          Suggested nearest free slot:{" "}
+                          <span className="font-bold text-amber-950">
+                            {slotEvaluation.suggestedSlot?.formattedRange}
+                          </span>
+                        </div>
+                      </div>
+                      {slotEvaluation.suggestedSlot && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (slotEvaluation.suggestedSlot) {
+                              setManualForm((prev) => ({
+                                ...prev,
+                                startTime: slotEvaluation.suggestedSlot!.startTime24,
+                              }));
+                            }
+                          }}
+                          className="shrink-0 px-3.5 py-1.5 bg-[#A0785A] hover:bg-[#7D5C42] text-white text-xs font-semibold rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer"
+                        >
+                          Apply Suggested Time
+                        </button>
+                      )}
+                    </div>
+                  ) : manualForm.startTime ? (
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div className="text-sm">
+                        <span className="font-semibold text-emerald-700">✓ Slot available</span>
+                        <span className="mx-2 text-emerald-300">·</span>
+                        <span className="text-emerald-800">Scheduled Range: </span>
+                        <span className="font-bold text-emerald-950">
+                          {slotEvaluation.formattedRange}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-[#FBF9F5] border border-[#E8E2D9] text-[#1A1A1A] flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <Clock className="w-4 h-4 text-[#A0785A] shrink-0" />
+                        <div className="text-sm">
+                          <span className="text-[#6B7280]">Auto-assigned Range: </span>
+                          <span className="font-semibold text-[#1A1A1A]">
+                            {slotEvaluation.formattedRange}
+                          </span>
+                          <span className="text-xs text-[#A0785A] ml-2 font-medium bg-[#A0785A]/10 px-2 py-0.5 rounded-full">
+                            Nearest Available
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-[#1A1A1A] mb-2">Task color</label>
@@ -970,7 +1247,64 @@ export default function TasksPage() {
             </div>
           )}
 
-          {/* 3. Task List */}
+          {/* 3. Task List Header, Search & Filter Bar */}
+          {tasks.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-[#E8E2D9] shadow-xs">
+              {/* Search Input */}
+              <div className="relative flex-1">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6B7280]" />
+                <input
+                  type="text"
+                  placeholder="Search tasks..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-8 py-2 rounded-xl border border-[#E8E2D9] text-sm text-[#1A1A1A] placeholder:text-[#6B7280] focus:outline-none focus:border-[#A0785A] bg-[#FAFAF8]"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-[#1A1A1A] text-xs font-semibold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto text-xs font-medium shrink-0">
+                {(
+                  [
+                    { key: "all", label: "All", count: tasks.length },
+                    { key: "pending", label: "Pending", count: tasks.filter((t) => t.status === "pending" && activeSession !== t.id).length },
+                    { key: "in_progress", label: "In Progress", count: tasks.filter((t) => t.status === "in_progress" || activeSession === t.id).length },
+                    { key: "completed", label: "Completed", count: tasks.filter((t) => t.status === "completed").length },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setFilterStatus(tab.key)}
+                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                      filterStatus === tab.key
+                        ? "bg-[#A0785A] text-white shadow-xs font-semibold"
+                        : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        filterStatus === tab.key ? "bg-white/20 text-white" : "bg-[#E8E2D9]/60 text-[#6B7280]"
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {tasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-2xl border border-[#E8E2D9] p-8">
               <div className="w-16 h-16 rounded-2xl bg-[#F5EFE8] flex items-center justify-center mb-4">
@@ -995,9 +1329,24 @@ export default function TasksPage() {
                 </button>
               </div>
             </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-[#E8E2D9] p-8 text-center shadow-xs">
+              <p className="text-sm font-medium text-[#1A1A1A]">No tasks match your filters</p>
+              <p className="text-xs text-[#6B7280] mt-1">Try changing the search query or status filter.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm("");
+                  setFilterStatus("all");
+                }}
+                className="mt-3 text-xs text-[#A0785A] font-semibold hover:underline"
+              >
+                Reset filters
+              </button>
+            </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {tasks.map((task) => {
+              {filteredTasks.map((task) => {
                 const timeInfo = getTaskRemainingDisplay(task);
                 const isActive = activeSession === task.id;
                 return (
@@ -1080,6 +1429,15 @@ export default function TasksPage() {
                           </button>
                         )
                       )}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditModal(task)}
+                        className="p-2 rounded-lg text-[#9CA3AF] hover:text-[#A0785A] hover:bg-[#F5EFE8] transition-colors shrink-0"
+                        title="Edit task"
+                        aria-label={`Edit ${task.title}`}
+                      >
+                        <Pencil size={16} />
+                      </button>
                       <button
                         type="button"
                         onClick={() => setTaskPendingDeletion(task)}
@@ -1173,6 +1531,128 @@ export default function TasksPage() {
                 <CheckCircle2 size={15} /> Finish Task
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Task Modal */}
+      {editingTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A1A]/45 p-6" role="presentation">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-task-title"
+            className="w-full max-w-lg rounded-2xl bg-white border border-[#E8E2D9] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#F5EFE8] flex items-center justify-center">
+                  <Pencil size={16} className="text-[#A0785A]" />
+                </div>
+                <div>
+                  <h2 id="edit-task-title" className="font-heading text-lg font-700 text-[#1A1A1A]">
+                    Edit Task
+                  </h2>
+                  <p className="text-xs text-[#6B7280]">Update task details, duration, priority, and recurrence.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingTask(null)}
+                className="text-[#6B7280] hover:text-[#1A1A1A] p-1.5 rounded-lg hover:bg-[#FAFAF8]"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#1A1A1A] mb-1.5">Task title *</label>
+                <input
+                  required
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className="w-full px-4 py-2.5 rounded-xl border border-[#E8E2D9] text-sm text-[#1A1A1A] focus:outline-none focus:border-[#A0785A] focus:ring-2 focus:ring-[#A0785A]/15"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#1A1A1A] mb-1.5">Duration (minutes) *</label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={480}
+                    required
+                    value={editForm.estimatedMinutes}
+                    onChange={(e) => setEditForm({ ...editForm, estimatedMinutes: Number(e.target.value) })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-[#E8E2D9] text-sm text-[#1A1A1A] focus:outline-none focus:border-[#A0785A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#1A1A1A] mb-1.5">Priority</label>
+                  <select
+                    value={editForm.priority}
+                    onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#E8E2D9] text-sm text-[#1A1A1A] focus:outline-none focus:border-[#A0785A] bg-white"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1A1A1A] mb-1.5">Recurrence</label>
+                <select
+                  value={editForm.recurrence}
+                  onChange={(e) => setEditForm({ ...editForm, recurrence: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-xl border border-[#E8E2D9] text-sm text-[#1A1A1A] focus:outline-none focus:border-[#A0785A] bg-white"
+                >
+                  <option value="none">None (One-time)</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1A1A1A] mb-2">Color tag</label>
+                <div className="flex gap-2">
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, color: c })}
+                      className="w-7 h-7 rounded-full transition-all hover:scale-110"
+                      style={{
+                        backgroundColor: c,
+                        outline: editForm.color === c ? `3px solid ${c}` : "none",
+                        outlineOffset: "2px",
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-[#E8E2D9]">
+                <button
+                  type="button"
+                  onClick={() => setEditingTask(null)}
+                  className="px-4 py-2.5 rounded-xl border border-[#E8E2D9] text-xs font-semibold text-[#6B7280] hover:bg-[#FAFAF8]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="px-5 py-2.5 rounded-xl bg-[#A0785A] text-xs font-semibold text-white hover:bg-[#7D5C42] shadow-sm disabled:opacity-50"
+                >
+                  {editLoading ? "Saving changes..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

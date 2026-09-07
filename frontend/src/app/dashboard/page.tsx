@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -7,7 +7,8 @@ import {
 } from "recharts";
 import {
   Clock, CheckCircle2, Circle, Target, Zap, Plus, Play, Square,
-  Brain, ChevronRight, Award, Moon, AlertCircle, X, Sparkles, Check, Info, Calendar
+  Brain, ChevronRight, Award, Moon, AlertCircle, X, Sparkles, Check, Info, Calendar,
+  Pencil, Repeat2, CalendarDays, Trash2, RotateCw
 } from "lucide-react";
 import { API_URL, fetchWithAuth, getUserEmail } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
@@ -106,16 +107,20 @@ function HourDetailModal({
   tasks,
   onToggleTask,
   onScheduleItem,
+  onDeleteItem,
   cellMap,
   sleepConfig,
+  days,
 }: {
   cell: HourCellDetail | null;
   onClose: () => void;
   tasks: Task[];
   onToggleTask?: (taskId: string, currentStatus: string) => void;
-  onScheduleItem: (item: ScheduledItem, dateKey: string) => void;
+  onScheduleItem: (item: ScheduledItem, dateKeys: string | string[], oldItemId?: string) => void;
+  onDeleteItem?: (itemId: string) => void;
   cellMap: Map<string, HourCellDetail>;
   sleepConfig: SleepConfig;
+  days: Date[];
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState<string>("");
   const [customTitle, setCustomTitle] = useState("");
@@ -123,7 +128,20 @@ function HourDetailModal({
   const [startHour, setStartHour] = useState<number>(cell ? cell.hour : 9);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [nearbySuggestions, setNearbySuggestions] = useState<number[]>([]);
-  const [scheduleSuccess, setScheduleSuccess] = useState(false);
+  const [scheduleSuccess, setScheduleSuccess] = useState<string | null>(null);
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [editingItem, setEditingItem] = useState<ScheduledItem | null>(null);
+  const [overrideSleep, setOverrideSleep] = useState(false);
+
+  // Array of 7 days in the week
+  const weekDays = useMemo(() => {
+    return days.map((d) => {
+      const key = formatLocalDate(d);
+      const dayShort = d.toLocaleDateString("en-US", { weekday: "short" });
+      const dayNum = d.getDate();
+      return { date: d, dateKey: key, dayShort, dayNum, label: `${dayShort} ${dayNum}` };
+    });
+  }, [days]);
 
   useEffect(() => {
     if (cell) {
@@ -132,13 +150,23 @@ function HourDetailModal({
       setDurationMinutes(free > 0 ? free : 30);
       setValidationError(null);
       setNearbySuggestions([]);
-      setScheduleSuccess(false);
+      setScheduleSuccess(null);
+      setSelectedDays([cell.dateKey]);
+      setEditingItem(null);
+      setSelectedTaskId("");
+      setCustomTitle("");
+      setOverrideSleep(false);
     }
   }, [cell]);
 
-  // Live slot validation whenever startHour or durationMinutes changes
+  // Live slot validation
   useEffect(() => {
     if (!cell) return;
+    if (editingItem && startHour === (editingItem.startHour ?? cell.hour)) {
+      setValidationError(null);
+      setNearbySuggestions([]);
+      return;
+    }
     const res = validateSlot(cell.dateKey, startHour, durationMinutes, cellMap, sleepConfig);
     if (!res.isValid) {
       setValidationError(res.message || "This time slot is occupied.");
@@ -147,14 +175,94 @@ function HourDetailModal({
       setValidationError(null);
       setNearbySuggestions([]);
     }
-  }, [cell, startHour, durationMinutes, cellMap, sleepConfig]);
+  }, [cell, startHour, durationMinutes, cellMap, sleepConfig, editingItem]);
 
   if (!cell) return null;
 
+  const handleToggleDay = (key: string) => {
+    setSelectedDays((prev) => {
+      if (prev.includes(key)) {
+        if (prev.length === 1) return prev; // Keep at least one day
+        return prev.filter((d) => d !== key);
+      }
+      return [...prev, key];
+    });
+  };
+
+  const handleSelectPreset = (preset: "this" | "weekdays" | "all") => {
+    if (preset === "this") setSelectedDays([cell.dateKey]);
+    else if (preset === "weekdays") setSelectedDays(weekDays.slice(0, 5).map((d) => d.dateKey));
+    else setSelectedDays(weekDays.map((d) => d.dateKey));
+  };
+
+  // Conflict map per day
+  const dayConflictMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    for (const wd of weekDays) {
+      if (editingItem && wd.dateKey === cell.dateKey && startHour === (editingItem.startHour ?? cell.hour)) {
+        map[wd.dateKey] = false;
+        continue;
+      }
+      const v = validateSlot(wd.dateKey, startHour, durationMinutes, cellMap, sleepConfig);
+      map[wd.dateKey] = !v.isValid;
+    }
+    return map;
+  }, [weekDays, startHour, durationMinutes, cellMap, sleepConfig, editingItem, cell]);
+
+  const conflictedSelectedDays = selectedDays.filter((k) => dayConflictMap[k]);
+
   const handleAutoAssign = () => {
     const slot = findNearestAvailableSlot(cell.dateKey, cell.hour, durationMinutes, cellMap, sleepConfig);
-    if (slot !== null) {
-      setStartHour(slot);
+    if (slot !== null) setStartHour(slot);
+  };
+
+  const handleStartEdit = (item: ScheduledItem) => {
+    setEditingItem(item);
+    if (item.taskId) {
+      setSelectedTaskId(item.taskId);
+      setCustomTitle("");
+    } else {
+      setSelectedTaskId("");
+      setCustomTitle(item.title);
+    }
+    setDurationMinutes(item.durationMinutes);
+    setStartHour(item.startHour ?? cell.hour);
+
+    // Find all days where this task is scheduled
+    const baseId = item.id.replace(/_\d{4}-\d{2}-\d{2}$/, "");
+    const daysWithTask = weekDays.filter((wd) => {
+      const c = cellMap.get(`${wd.dateKey}_${item.startHour ?? cell.hour}`);
+      return c?.items.some((it) =>
+        it.id === item.id ||
+        it.id.startsWith(baseId) ||
+        (item.taskId && it.taskId === item.taskId) ||
+        it.title === item.title
+      );
+    }).map((wd) => wd.dateKey);
+
+    setSelectedDays(daysWithTask.length > 0 ? daysWithTask : [cell.dateKey]);
+    setOverrideSleep(true);
+    setValidationError(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingItem(null);
+    setSelectedTaskId("");
+    setCustomTitle("");
+    setStartHour(cell ? cell.hour : 9);
+    setDurationMinutes(cell?.remainingFreeMinutes ? Math.min(30, cell.remainingFreeMinutes) : 30);
+    setSelectedDays(cell ? [cell.dateKey] : []);
+    setValidationError(null);
+  };
+
+  const handleDeleteItem = (item: ScheduledItem) => {
+    if (onDeleteItem) {
+      onDeleteItem(item.id);
+      if (editingItem?.id === item.id) {
+        handleCancelEdit();
+      }
+      setScheduleSuccess(`Task "${item.title}" removed.`);
+      setTimeout(() => setScheduleSuccess(null), 1500);
     }
   };
 
@@ -166,327 +274,487 @@ function HourDetailModal({
       setValidationError("Please select a task or enter a task title.");
       return;
     }
-
-    const validation = validateSlot(cell.dateKey, startHour, durationMinutes, cellMap, sleepConfig);
-    if (!validation.isValid) {
-      setValidationError(validation.message || "This time slot is occupied.");
-      setNearbySuggestions(validation.nearbyHours || []);
+    if (selectedDays.length === 0) {
+      setValidationError("Please select at least one day.");
+      return;
+    }
+    if (!editingItem && conflictedSelectedDays.length === selectedDays.length) {
+      setValidationError(`All selected days are occupied at ${String(startHour).padStart(2, "0")}:00. Try Auto-Assign.`);
       return;
     }
 
+    const baseId = editingItem
+      ? editingItem.id.replace(/_\d{4}-\d{2}-\d{2}$/, "")
+      : `manual_${Date.now()}`;
+
     const newItem: ScheduledItem = {
-      id: `manual_${Date.now()}`,
-      taskId: chosenTask?.id,
+      id: baseId,
+      taskId: chosenTask?.id || editingItem?.taskId,
       title,
       durationMinutes,
       startHour,
-      status: chosenTask?.status === "completed" ? "completed" : "pending",
-      color: chosenTask?.color || BRAND,
-      deadline: chosenTask?.deadline,
+      status: editingItem ? editingItem.status : (chosenTask?.status === "completed" ? "completed" : "pending"),
+      color: chosenTask?.color || editingItem?.color || BRAND,
+      deadline: chosenTask?.deadline || editingItem?.deadline,
     };
 
-    onScheduleItem(newItem, cell.dateKey);
-    setScheduleSuccess(true);
+    onScheduleItem(newItem, selectedDays, editingItem ? editingItem.id : undefined);
+    setScheduleSuccess(
+      editingItem
+        ? `Task updated for ${selectedDays.length} day${selectedDays.length > 1 ? "s" : ""}!`
+        : `Task scheduled for ${selectedDays.length} day${selectedDays.length > 1 ? "s" : ""}!`
+    );
     setTimeout(() => {
+      setEditingItem(null);
       onClose();
-    }, 800);
+    }, 900);
   };
 
-  const statusBadge = () => {
-    switch (cell.status) {
-      case "sleep":
-        return (
-          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#EEF2FF] text-[#4338CA] border border-[#C7D2FE]">
-            <Moon size={12} /> Circadian Sleep (Rest & Recovery)
-          </span>
-        );
-      case "completed":
-        return (
-          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#E8F8EE] text-[#16A34A] border border-[#BFE8C8]">
-            <CheckCircle2 size={12} /> Completed
-          </span>
-        );
-      case "missed":
-        return (
-          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#FDE8E8] text-[#DC2626] border border-[#F4B8B8]">
-            <AlertCircle size={12} /> Missed / Overdue
-          </span>
-        );
-      case "scheduled":
-        return (
-          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1]">
-            <Clock size={12} /> Scheduled
-          </span>
-        );
-      default:
-        return (
-          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#F9FAFB] text-[#6B7280] border border-[#E5E7EB]">
-            Empty Hour
-          </span>
-        );
-    }
-  };
-
-  const bookedPercent = Math.min(100, Math.round((cell.totalBookedMinutes / 60) * 100));
+  const isSleepSlot = cell.status === "sleep" && !overrideSleep;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-[#E8E2D9] max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
-        {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-[#F0EBE3]">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Calendar size={14} className="text-[#A0785A]" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#6B7280]">{cell.dayLabel}</span>
-              <span className="text-xs text-[#9CA3AF]">•</span>
-              <span className="text-xs text-[#6B7280]">{cell.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-[#E8E2D9] flex flex-col"
+           style={{ maxHeight: "min(94vh, 760px)" }}>
+
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#F0EBE3] shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#F5EFE8] flex items-center justify-center">
+              <CalendarDays size={17} className="text-[#A0785A]" />
             </div>
-            <h3 className="font-heading text-lg font-700 text-[#1A1A1A]">{cell.timeRangeLabel}</h3>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-[#6B7280]">
+                  {cell.dayLabel} · {cell.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </p>
+                {cell.status === "sleep" && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#EEF2FF] text-[#4338CA] border border-[#C7D2FE]">
+                    <Moon size={10} /> Sleep Block
+                  </span>
+                )}
+              </div>
+              <h3 className="font-heading text-lg font-700 text-[#1A1A1A] leading-tight mt-0.5">
+                {cell.timeRangeLabel}
+              </h3>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="text-[#9CA3AF] hover:text-[#1A1A1A] p-1.5 rounded-lg hover:bg-[#F5EFE8] transition-colors"
-            title="Close"
+            className="text-[#9CA3AF] hover:text-[#1A1A1A] p-1.5 rounded-lg hover:bg-[#F5EFE8] transition-colors cursor-pointer"
+            title="Close modal"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Status & Capacity Gauge */}
-        <div className="py-4 border-b border-[#F0EBE3] space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-[#6B7280]">Status</span>
-            {statusBadge()}
-          </div>
+        {/* ── Scrollable Body ── */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
 
-          <div>
-            <div className="flex items-center justify-between text-xs mb-1.5">
-              <span className="text-[#6B7280]">Capacity booked</span>
-              <span className="font-semibold text-[#1A1A1A]">
-                {cell.totalBookedMinutes} min / 60 min ({cell.remainingFreeMinutes} min free)
-              </span>
-            </div>
-            <div className="w-full bg-[#F1F1F1] rounded-full h-2.5 overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-300 ${
-                  cell.status === "sleep"
-                    ? "bg-[#6366F1]"
-                    : cell.status === "completed"
-                    ? "bg-[#16A34A]"
-                    : cell.status === "missed"
-                    ? "bg-[#DC2626]"
-                    : "bg-[#A0785A]"
-                }`}
-                style={{ width: `${bookedPercent}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Scheduled Items List */}
-        <div className="py-4 border-b border-[#F0EBE3]">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6B7280] mb-3">
-            Scheduled Items ({cell.items.length})
-          </h4>
-
-          {cell.items.length === 0 ? (
-            <p className="text-xs text-[#9CA3AF] italic py-2">No tasks scheduled in this hour slot.</p>
-          ) : (
+          {/* ── Scheduled Tasks in this slot ── */}
+          {cell.items.length > 0 && (
             <div className="space-y-2">
-              {cell.items.map((item, idx) => (
-                <div
-                  key={item.id || idx}
-                  className="flex items-center justify-between p-3 rounded-xl bg-[#FAFAF8] border border-[#E8E2D9]"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-white border border-[#E8E2D9] text-[#1A1A1A] shrink-0">
-                      {item.durationMinutes} min
-                    </span>
-                    <span className="text-sm font-medium text-[#1A1A1A] truncate">{item.title}</span>
-                  </div>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#6B7280]">
+                  Scheduled in this Hour ({cell.items.length})
+                </h4>
+                <span className="text-[11px] text-[#6B7280]">
+                  {cell.remainingFreeMinutes > 0 ? `${cell.remainingFreeMinutes}m free remaining` : "Full hour booked"}
+                </span>
+              </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    {item.isSleep ? (
-                      <span className="text-[11px] font-semibold text-[#4338CA] bg-[#EEF2FF] px-2 py-0.5 rounded-md">
-                        Sleep
+              <div className="space-y-2">
+                {cell.items.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                      editingItem?.id === item.id
+                        ? "bg-[#FAF7F2] border-[#A0785A] ring-2 ring-[#A0785A]/25"
+                        : "bg-[#FAFAF8] border-[#E8E2D9]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {item.color && (
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                      )}
+                      <span className="text-xs font-bold text-[#A0785A] bg-[#F5EFE8] px-2 py-0.5 rounded-md shrink-0">
+                        {item.durationMinutes}m
                       </span>
-                    ) : (
-                      <>
-                        <span
-                          className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${
-                            item.status === "completed"
-                              ? "text-[#16A34A] bg-[#E8F8EE]"
-                              : item.status === "missed"
-                              ? "text-[#DC2626] bg-[#FDE8E8]"
-                              : "text-[#475569] bg-[#F1F5F9]"
-                          }`}
-                        >
-                          {item.status === "completed" ? "Done" : item.status === "missed" ? "Missed" : "Pending"}
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-[#1A1A1A] truncate">{item.title}</p>
+                        {item.startHour !== undefined && (
+                          <p className="text-[10px] text-[#6B7280]">
+                            {String(item.startHour).padStart(2, "0")}:00 – {String((item.startHour + Math.ceil(item.durationMinutes / 60)) % 24).padStart(2, "0")}:00
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {item.isSleep ? (
+                        <span className="text-[10px] font-semibold text-[#4338CA] bg-[#EEF2FF] px-2 py-0.5 rounded-md">
+                          Sleep
                         </span>
-                        {item.taskId && onToggleTask && (
+                      ) : (
+                        <>
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                              item.status === "completed"
+                                ? "text-[#16A34A] bg-[#E8F8EE]"
+                                : item.status === "missed"
+                                ? "text-[#DC2626] bg-[#FDE8E8]"
+                                : "text-[#475569] bg-[#F1F5F9]"
+                            }`}
+                          >
+                            {item.status === "completed" ? "Done" : item.status === "missed" ? "Missed" : "Pending"}
+                          </span>
+
+                          {/* Complete Toggle */}
+                          {item.taskId && onToggleTask && (
+                            <button
+                              type="button"
+                              onClick={() => onToggleTask(item.taskId!, item.status)}
+                              className="p-1.5 rounded-lg text-[#6B7280] hover:text-[#16A34A] hover:bg-green-50 transition-colors cursor-pointer"
+                              title={item.status === "completed" ? "Mark pending" : "Mark done"}
+                            >
+                              <CheckCircle2 size={15} className={item.status === "completed" ? "text-[#16A34A]" : ""} />
+                            </button>
+                          )}
+
+                          {/* ── Edit Button ── */}
                           <button
                             type="button"
-                            onClick={() => onToggleTask(item.taskId!, item.status)}
-                            className="p-1 rounded text-[#6B7280] hover:text-[#16A34A] hover:bg-green-50 transition-colors"
-                            title={item.status === "completed" ? "Mark as pending" : "Mark as completed"}
+                            onClick={() => (editingItem?.id === item.id ? handleCancelEdit() : handleStartEdit(item))}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                              editingItem?.id === item.id
+                                ? "bg-[#A0785A] text-white shadow-xs"
+                                : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
+                            }`}
+                            title="Edit task & recurring days"
                           >
-                            <CheckCircle2 size={16} className={item.status === "completed" ? "text-[#16A34A]" : ""} />
+                            <Pencil size={12} />
+                            <span>{editingItem?.id === item.id ? "Editing" : "Edit"}</span>
                           </button>
-                        )}
-                      </>
-                    )}
+
+                          {/* ── Delete Button ── */}
+                          {onDeleteItem && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteItem(item)}
+                              className="p-1.5 rounded-lg text-[#9CA3AF] hover:text-[#DC2626] hover:bg-red-50 transition-colors cursor-pointer"
+                              title="Delete from schedule"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Schedule Form */}
-        {cell.status !== "sleep" && (
-          <div className="pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                Schedule Task into this Day
-              </h4>
-              {cell.remainingFreeMinutes > 0 && (
-                <span className="text-xs font-medium text-[#16A34A] bg-green-50 px-2 py-0.5 rounded-md">
-                  {cell.remainingFreeMinutes}m free in this hour
-                </span>
-              )}
-            </div>
-
-            {scheduleSuccess ? (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-xs flex items-center gap-2">
-                <Check size={14} className="text-green-600 shrink-0" />
-                <span>Task scheduled successfully! Updating map...</span>
+          {/* ── Sleep slot locked message with override option ── */}
+          {isSleepSlot && (
+            <div className="bg-[#EEF2FF]/70 border border-[#C7D2FE] rounded-2xl p-4 text-center space-y-2.5">
+              <div className="flex items-center justify-center gap-2 text-[#4338CA] font-semibold text-sm">
+                <Moon size={16} /> Circadian Sleep Block ({cell.timeRangeLabel})
               </div>
-            ) : (
-              <form onSubmit={handleScheduleSubmit} className="space-y-3">
-                {/* Select Task or Custom */}
-                <div>
-                  <label className="block text-xs font-medium text-[#6B7280] mb-1">Select Existing Task</label>
-                  <select
-                    value={selectedTaskId}
-                    onChange={(e) => {
-                      setSelectedTaskId(e.target.value);
-                      const t = tasks.find((item) => item.id === e.target.value);
-                      if (t) {
-                        setDurationMinutes(t.estimatedMinutes || 30);
-                        setCustomTitle("");
-                      }
-                    }}
-                    className="w-full text-xs rounded-xl border border-[#E8E2D9] p-2.5 bg-white text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#A0785A]/20"
-                  >
-                    <option value="">-- Choose existing task or write custom below --</option>
-                    {tasks.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.title} ({t.estimatedMinutes}m) · {t.status}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <p className="text-xs text-[#4B5563]">
+                This hour is reserved for sleep and recovery.
+              </p>
+              <button
+                type="button"
+                onClick={() => setOverrideSleep(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#4338CA] bg-white border border-[#C7D2FE] hover:bg-[#EEF2FF] px-3.5 py-2 rounded-xl transition-all shadow-xs cursor-pointer"
+              >
+                <Plus size={13} /> Schedule task in this slot anyway
+              </button>
+            </div>
+          )}
 
-                {!selectedTaskId && (
-                  <div>
-                    <label className="block text-xs font-medium text-[#6B7280] mb-1">Custom Task Title</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Reading books, Shower, Deep Work"
-                      value={customTitle}
-                      onChange={(e) => setCustomTitle(e.target.value)}
-                      className="w-full text-xs rounded-xl border border-[#E8E2D9] p-2.5 bg-white text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#A0785A]/20"
-                    />
+          {/* ── Scheduling & Editing Form ── */}
+          {!isSleepSlot && (
+            <div className="space-y-3.5 pt-1">
+              {/* Form title / Edit banner */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${editingItem ? "bg-[#A0785A] text-white" : "bg-[#F5EFE8] text-[#A0785A]"}`}>
+                    {editingItem ? <Pencil size={12} /> : <CalendarDays size={13} />}
                   </div>
+                  <span className="text-xs font-bold text-[#1A1A1A]">
+                    {editingItem ? `Edit Task: "${editingItem.title}"` : "Schedule a Task"}
+                  </span>
+                </div>
+                {editingItem && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="text-xs font-semibold text-[#A0785A] hover:underline cursor-pointer"
+                  >
+                    Cancel Edit
+                  </button>
                 )}
+              </div>
 
-                {/* Duration Picker */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-medium text-[#6B7280]">Duration (minutes)</label>
-                    <span className="text-xs font-bold text-[#A0785A]">{durationMinutes} min</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {[15, 30, 45, 60, 90, 120, 180].map((mins) => (
-                      <button
-                        type="button"
-                        key={mins}
-                        onClick={() => setDurationMinutes(mins)}
-                        className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${
-                          durationMinutes === mins
-                            ? "bg-[#A0785A] text-white border-[#A0785A]"
-                            : "bg-white text-[#6B7280] border-[#E8E2D9] hover:bg-[#F5EFE8]"
-                        }`}
-                      >
-                        {mins >= 60 ? `${mins / 60}h` : `${mins}m`}
-                      </button>
-                    ))}
-                  </div>
+              {scheduleSuccess ? (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-800 text-xs flex items-center gap-2 font-medium">
+                  <Check size={16} className="text-green-600 shrink-0" />
+                  <span>{scheduleSuccess}</span>
                 </div>
+              ) : (
+                <form onSubmit={handleScheduleSubmit} className="space-y-3.5">
 
-                {/* Start Hour Selector */}
-                <div>
-                  <label className="block text-xs font-medium text-[#6B7280] mb-1">Start Hour</label>
-                  <select
-                    value={startHour}
-                    onChange={(e) => setStartHour(Number(e.target.value))}
-                    className="w-full text-xs rounded-xl border border-[#E8E2D9] p-2.5 bg-white text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#A0785A]/20"
-                  >
-                    {Array.from({ length: 24 }, (_, h) => (
-                      <option key={h} value={h}>
-                        {String(h).padStart(2, "0")}:00 ({String(h).padStart(2, "0")}:00 – {String((h + 1) % 24).padStart(2, "0")}:00)
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  {/* ── STEP 1: CHOOSE DAYS OF THE WEEK ── */}
+                  <div className="bg-[#FAF7F2] rounded-2xl border border-[#E8E2D9] p-3.5 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-[#1A1A1A] flex items-center gap-1.5">
+                        <CalendarDays size={14} className="text-[#A0785A]" />
+                        Repeat on Days of the Week:
+                        <span className="text-[#A0785A] font-extrabold bg-[#A0785A]/15 px-2 py-0.5 rounded-full text-[11px]">
+                          {selectedDays.length} of 7 days
+                        </span>
+                      </label>
 
-                {/* Validation Error Banner */}
-                {validationError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-2">
-                    <div className="flex items-start gap-2 text-xs text-red-700">
-                      <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
-                      <span>{validationError}</span>
+                      {/* Quick Presets */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectPreset("this")}
+                          className={`text-[10px] px-2 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                            selectedDays.length === 1 && selectedDays[0] === cell.dateKey
+                              ? "bg-[#A0785A] text-white shadow-xs"
+                              : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
+                          }`}
+                        >
+                          This day
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectPreset("weekdays")}
+                          className={`text-[10px] px-2 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                            selectedDays.length === 5 && weekDays.slice(0, 5).every((d) => selectedDays.includes(d.dateKey))
+                              ? "bg-[#A0785A] text-white shadow-xs"
+                              : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
+                          }`}
+                        >
+                          Mon–Fri
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectPreset("all")}
+                          className={`text-[10px] px-2 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                            selectedDays.length === 7
+                              ? "bg-[#A0785A] text-white shadow-xs"
+                              : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
+                          }`}
+                        >
+                          All 7 days
+                        </button>
+                      </div>
                     </div>
-                    {nearbySuggestions.length > 0 && (
-                      <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-red-200/60">
-                        <span className="text-[11px] text-red-600 font-medium">Switch to nearby:</span>
-                        {nearbySuggestions.map((h) => (
+
+                    {/* 7 Day Pills */}
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {weekDays.map((wd) => {
+                        const isSelected = selectedDays.includes(wd.dateKey);
+                        const isConflicted = dayConflictMap[wd.dateKey];
+                        const isClicked = wd.dateKey === cell.dateKey;
+
+                        return (
                           <button
+                            key={wd.dateKey}
                             type="button"
-                            key={h}
-                            onClick={() => setStartHour(h)}
-                            className="text-[11px] font-semibold bg-white text-red-700 border border-red-300 px-2 py-0.5 rounded hover:bg-red-100 transition-colors"
+                            onClick={() => handleToggleDay(wd.dateKey)}
+                            title={`${wd.dayShort} ${wd.dayNum} · ${isConflicted ? "Slot occupied at this hour" : "Slot free"}`}
+                            className={`flex flex-col items-center justify-center py-2.5 px-1 rounded-xl border text-xs transition-all cursor-pointer select-none relative ${
+                              isSelected
+                                ? "bg-[#A0785A] text-white border-[#A0785A] shadow-xs ring-1 ring-[#A0785A]"
+                                : "bg-white text-[#4B5563] border-[#E8E2D9] hover:border-[#A0785A]/50 hover:bg-[#FDFBF9]"
+                            }`}
                           >
-                            {String(h).padStart(2, "0")}:00
+                            {isSelected && (
+                              <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-white text-[#A0785A] flex items-center justify-center shadow-xs">
+                                <Check size={9} strokeWidth={3} />
+                              </div>
+                            )}
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isSelected ? "text-white" : "text-[#6B7280]"}`}>
+                              {wd.dayShort}
+                            </span>
+                            <span className={`text-sm font-extrabold mt-0.5 ${isSelected ? "text-white" : "text-[#1A1A1A]"}`}>
+                              {wd.dayNum}
+                            </span>
+                            <div className="flex items-center gap-1 mt-1">
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  isConflicted
+                                    ? isSelected ? "bg-amber-300" : "bg-red-500"
+                                    : isSelected ? "bg-emerald-300" : "bg-emerald-500"
+                                }`}
+                              />
+                            </div>
+                            {isClicked && (
+                              <span className={`text-[8px] font-semibold mt-0.5 leading-none ${isSelected ? "text-white/80" : "text-[#A0785A]"}`}>
+                                Selected
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {conflictedSelectedDays.length > 0 && !editingItem && (
+                      <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200/80 rounded-lg px-2.5 py-1.5 mt-1 flex items-center gap-1.5">
+                        <AlertCircle size={13} className="text-amber-600 shrink-0" />
+                        <span>
+                          Note: {conflictedSelectedDays.map((k) => weekDays.find((w) => w.dateKey === k)?.dayShort).join(", ")} already {conflictedSelectedDays.length === 1 ? "has" : "have"} an item at {String(startHour).padStart(2, "0")}:00.
+                        </span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* ── STEP 2: TASK SELECTION ── */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#6B7280] mb-1">
+                      {editingItem ? "Task" : "Select Existing Task or Create Custom"}
+                    </label>
+                    <select
+                      value={selectedTaskId}
+                      onChange={(e) => {
+                        setSelectedTaskId(e.target.value);
+                        const t = tasks.find((item) => item.id === e.target.value);
+                        if (t) {
+                          setDurationMinutes(t.estimatedMinutes || 30);
+                          setCustomTitle("");
+                        }
+                      }}
+                      className="w-full text-xs rounded-xl border border-[#E8E2D9] p-2.5 bg-white text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#A0785A]/20"
+                    >
+                      <option value="">— Choose existing task or write custom below —</option>
+                      {tasks.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title} ({t.estimatedMinutes}m) · {t.status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {!selectedTaskId && (
+                    <div>
+                      <label className="block text-xs font-semibold text-[#6B7280] mb-1">Custom Task Title</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Deep Work, Gym Workout, Reading"
+                        value={customTitle}
+                        onChange={(e) => setCustomTitle(e.target.value)}
+                        className="w-full text-xs rounded-xl border border-[#E8E2D9] p-2.5 bg-white text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#A0785A]/20"
+                      />
+                    </div>
+                  )}
+
+                  {/* ── STEP 3: DURATION & START HOUR ── */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-[#6B7280]">Duration</label>
+                        <span className="text-xs font-bold text-[#A0785A]">{durationMinutes}m</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {[15, 30, 45, 60, 90, 120].map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setDurationMinutes(m)}
+                            className={`text-xs px-2 py-1 rounded-lg border font-medium transition-all cursor-pointer ${
+                              durationMinutes === m
+                                ? "bg-[#A0785A] text-white border-[#A0785A]"
+                                : "bg-white text-[#6B7280] border-[#E8E2D9] hover:bg-[#F5EFE8]"
+                            }`}
+                          >
+                            {m >= 60 ? `${m / 60}h` : `${m}m`}
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#6B7280] mb-1">Start Hour</label>
+                      <select
+                        value={startHour}
+                        onChange={(e) => setStartHour(Number(e.target.value))}
+                        className="w-full text-xs rounded-xl border border-[#E8E2D9] p-2.5 bg-white text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#A0785A]/20"
+                      >
+                        {Array.from({ length: 24 }, (_, h) => (
+                          <option key={h} value={h}>
+                            {String(h).padStart(2, "0")}:00 – {String((h + 1) % 24).padStart(2, "0")}:00
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Validation Error Banner */}
+                  {validationError && (
+                    <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl space-y-1.5">
+                      <div className="flex items-start gap-2 text-xs text-red-700">
+                        <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
+                        <span>{validationError}</span>
+                      </div>
+                      {nearbySuggestions.length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap pt-1 border-t border-red-200/60">
+                          <span className="text-[10px] text-red-600 font-medium">Available nearby:</span>
+                          {nearbySuggestions.map((h) => (
+                            <button
+                              key={h}
+                              type="button"
+                              onClick={() => setStartHour(h)}
+                              className="text-[10px] font-semibold bg-white text-red-700 border border-red-300 px-2 py-0.5 rounded hover:bg-red-50 cursor-pointer"
+                            >
+                              {String(h).padStart(2, "0")}:00
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="submit"
+                      disabled={selectedDays.length === 0 || (!editingItem && conflictedSelectedDays.length === selectedDays.length)}
+                      className="flex-1 text-sm py-2.5 px-4 rounded-xl font-semibold text-white bg-[#A0785A] hover:bg-[#7D5C42] disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                    >
+                      {editingItem ? (
+                        <>
+                          <Pencil size={14} />
+                          {selectedDays.length <= 1 ? "Update Task" : `Update Task for ${selectedDays.length} Days`}
+                        </>
+                      ) : (
+                        <>
+                          <CalendarDays size={14} />
+                          {selectedDays.length <= 1 ? "Schedule Task" : `Schedule for ${selectedDays.length} Days`}
+                        </>
+                      )}
+                    </button>
+                    {!editingItem && (
+                      <button
+                        type="button"
+                        onClick={handleAutoAssign}
+                        className="text-xs py-2.5 px-3.5 rounded-xl font-medium text-[#A0785A] border border-[#A0785A]/40 hover:bg-[#F5EFE8] transition-all shrink-0 flex items-center gap-1 cursor-pointer"
+                        title="Auto-find closest free slot"
+                      >
+                        <Sparkles size={13} /> Auto
+                      </button>
                     )}
                   </div>
-                )}
-
-                {/* Submit and Auto-assign buttons */}
-                <div className="flex items-center gap-2 pt-2">
-                  <button
-                    type="submit"
-                    disabled={!!validationError}
-                    className="flex-1 text-xs py-2.5 px-4 rounded-xl font-semibold text-white bg-[#A0785A] hover:bg-[#7D5C42] disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs cursor-pointer"
-                  >
-                    Schedule Task
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAutoAssign}
-                    className="text-xs py-2.5 px-3 rounded-xl font-medium text-[#A0785A] border border-[#A0785A]/40 hover:bg-[#F5EFE8] transition-all shrink-0 flex items-center gap-1 cursor-pointer"
-                    title="Find closest free window automatically"
-                  >
-                    <Sparkles size={13} /> Auto-Assign Slot
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        )}
+                </form>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -515,24 +783,83 @@ function WeeklyHourGrid({
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
 
   const email = getUserEmail();
-  const [manualItems, setManualItems] = useState<Record<string, ScheduledItem[]>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const key = `timespace_manual_schedule_${email}`;
-        const saved = localStorage.getItem(key);
-        if (saved) return JSON.parse(saved);
-      } catch { /* ignore */ }
-    }
-    return {};
-  });
+  const [manualItems, setManualItems] = useState<Record<string, ScheduledItem[]>>({});
+  const [mounted, setMounted] = useState(false);
 
-  const saveManualItem = (item: ScheduledItem, dateKey: string) => {
+  useEffect(() => {
+    setMounted(true);
+    if (!email) return;
+    try {
+      const key = `timespace_manual_schedule_${email}`;
+      const saved = localStorage.getItem(key);
+      if (saved) setManualItems(JSON.parse(saved));
+    } catch { /* ignore */ }
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === `timespace_manual_schedule_${email}` && e.newValue) {
+        try {
+          setManualItems(JSON.parse(e.newValue));
+        } catch { /* ignore */ }
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [email]);
+
+  const saveManualItem = (
+    item: ScheduledItem,
+    dateKeys: string | string[],
+    oldItemId?: string
+  ) => {
+    const keys = Array.isArray(dateKeys) ? dateKeys : [dateKeys];
+    const baseId = oldItemId
+      ? oldItemId.replace(/_\d{4}-\d{2}-\d{2}$/, "")
+      : item.id.replace(/_\d{4}-\d{2}-\d{2}$/, "");
+
     setManualItems((prev) => {
-      const existing = prev[dateKey] || [];
-      const updated = {
-        ...prev,
-        [dateKey]: [...existing, item],
-      };
+      const updated = { ...prev };
+
+      // If updating an existing item, remove old occurrences across all days first
+      if (oldItemId) {
+        for (const dKey of Object.keys(updated)) {
+          updated[dKey] = (updated[dKey] || []).filter(
+            (it) => it.id !== oldItemId && !it.id.startsWith(baseId)
+          );
+        }
+      }
+
+      // Add to each selected day
+      for (const dKey of keys) {
+        const existing = updated[dKey] || [];
+        const itemForDay: ScheduledItem = {
+          ...item,
+          id: `${baseId}_${dKey}`,
+        };
+        // Avoid duplicate
+        const filtered = existing.filter(
+          (it) => it.id !== itemForDay.id && !(it.startHour === item.startHour && it.title === item.title)
+        );
+        updated[dKey] = [...filtered, itemForDay];
+      }
+
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`timespace_manual_schedule_${email}`, JSON.stringify(updated));
+        } catch { /* ignore */ }
+      }
+      return updated;
+    });
+  };
+
+  const deleteManualItem = (itemId: string) => {
+    const baseId = itemId.replace(/_\d{4}-\d{2}-\d{2}$/, "");
+    setManualItems((prev) => {
+      const updated = { ...prev };
+      for (const dKey of Object.keys(updated)) {
+        updated[dKey] = (updated[dKey] || []).filter(
+          (it) => it.id !== itemId && !it.id.startsWith(baseId)
+        );
+      }
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem(`timespace_manual_schedule_${email}`, JSON.stringify(updated));
@@ -617,7 +944,7 @@ function WeeklyHourGrid({
               Interactive 7×24
             </span>
           </div>
-          <p className="text-xs text-[#6B7280] mt-1">Every hour from Monday through Sunday · Click any cell to inspect or schedule</p>
+          <p className="text-xs text-[#6B7280] mt-1">Every hour from Monday through Sunday · Click any cell to inspect, edit, or schedule</p>
         </div>
         <div className="flex items-center gap-3.5 text-xs text-[#6B7280] flex-wrap">
           <span className="flex items-center gap-1.5"><i className="w-3 h-3 rounded-xs bg-[#BFE8C8] border border-[#A3D9AE]" /> Complete</span>
@@ -643,7 +970,7 @@ function WeeklyHourGrid({
           {/* 7 Days Matrix */}
           {days.map((date) => {
             const dateKey = formatLocalDate(date);
-            const isCurrentDay = dateKey === formatLocalDate(today);
+            const isCurrentDay = mounted && dateKey === formatLocalDate(today);
 
             return (
               <div key={dateKey} className="grid grid-cols-[72px_repeat(24,minmax(32px,1fr))] gap-1 mb-1">
@@ -656,14 +983,15 @@ function WeeklyHourGrid({
                   const cellKey = `${dateKey}_${hour}`;
                   const cell = cellMap.get(cellKey)!;
                   const hasMultiple = cell.items.length > 1;
+                  const hasTasks = cell.items.length > 0 && cell.status !== "sleep";
 
                   return (
                     <button
                       type="button"
                       key={hour}
                       onClick={() => setSelectedCellKey(cellKey)}
-                      title={cell.label}
-                      className={`h-7 rounded-xs ${cell.tone} relative transition-all duration-150 hover:ring-2 hover:ring-[#A0785A]/50 hover:scale-105 focus:outline-hidden cursor-pointer flex items-center justify-center`}
+                      title={`${cell.label} (Click to inspect or edit)`}
+                      className={`h-7 rounded-xs ${cell.tone} relative transition-all duration-150 hover:ring-2 hover:ring-[#A0785A]/50 hover:scale-105 focus:outline-hidden cursor-pointer flex items-center justify-center group`}
                     >
                       {cell.status === "sleep" ? (
                         <Moon size={9} className="text-[#6366F1]/50" />
@@ -674,6 +1002,13 @@ function WeeklyHourGrid({
                           ))}
                         </div>
                       ) : null}
+
+                      {/* Visual pencil edit indicator on hover for cells with scheduled tasks */}
+                      {hasTasks && (
+                        <span className="absolute inset-0 bg-[#A0785A]/15 rounded-xs opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <Pencil size={9} className="text-[#A0785A]" />
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -691,13 +1026,16 @@ function WeeklyHourGrid({
           tasks={tasks}
           onToggleTask={onToggleTask}
           onScheduleItem={saveManualItem}
+          onDeleteItem={deleteManualItem}
           cellMap={cellMap}
           sleepConfig={userSleep}
+          days={days}
         />
       )}
     </section>
   );
 }
+
 
 function GlobalRecords({ analytics }: { analytics: Analytics | null }) {
   const records = [
@@ -864,18 +1202,19 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [weeklySchedules, setWeeklySchedules] = useState<Record<string, WeeklySchedule>>({});
   const [coach, setCoach] = useState<CoachTip | null>(null);
-  const [assessment, setAssessment] = useState<ProductivityAssessment | null>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("timespace_assessment");
-        if (saved) return JSON.parse(saved);
-      } catch { /* ignore */ }
-    }
-    return null;
-  });
+  const [assessment, setAssessment] = useState<ProductivityAssessment | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("timespace_assessment");
+      if (saved) setAssessment(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, []);
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [timerSelectedTaskId, setTimerSelectedTaskId] = useState("");
+  const [coachLoading, setCoachLoading] = useState(false);
   const [showTimeUpModal, setShowTimeUpModal] = useState(false);
   const [timeUpTask, setTimeUpTask] = useState<Task | null>(null);
   const [hasPrompted, setHasPrompted] = useState(false);
@@ -958,22 +1297,35 @@ export default function DashboardPage() {
     }
   }, [tasks, analytics, activeSession, elapsed]);
 
+  const fetchCoach = async () => {
+    if (!analytics) return;
+    setCoachLoading(true);
+    try {
+      const res = await fetchWithAuth(`${API_URL}/ai/coach/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_email: email || "user@example.com",
+          total_tasks: analytics.totalTasks,
+          completed_tasks: analytics.completedTasks,
+          total_focus_minutes: analytics.totalFocusMinutes,
+        }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        if (d) setCoach(d);
+      }
+    } catch (err) {
+      console.error("Failed to fetch coach recommendations:", err);
+    } finally {
+      setCoachLoading(false);
+    }
+  };
+
   // Fetch AI coaching & Server Productivity Score after analytics/tasks loaded
   useEffect(() => {
     if (!analytics) return;
-    fetchWithAuth(`${API_URL}/ai/coach/analyze`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_email: email || "user@example.com",
-        total_tasks: analytics.totalTasks,
-        completed_tasks: analytics.completedTasks,
-        total_focus_minutes: analytics.totalFocusMinutes,
-      }),
-    })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => d && setCoach(d))
-      .catch(() => { });
+    fetchCoach();
 
     // Compute Advanced Productivity Score on Server
     const records = tasks.map(t => ({
@@ -1350,11 +1702,23 @@ export default function DashboardPage() {
 
             {/* AI Coach Panel */}
             <div className="bg-white rounded-2xl border border-[#E8E2D9] p-6 flex flex-col">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-[#F5EFE8] flex items-center justify-center">
-                  <Brain size={16} className="text-[#A0785A]" />
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-[#F5EFE8] flex items-center justify-center">
+                    <Brain size={16} className="text-[#A0785A]" />
+                  </div>
+                  <h2 className="font-heading font-600 text-[#1A1A1A]">AI Coach</h2>
                 </div>
-                <h2 className="font-heading font-600 text-[#1A1A1A]">AI Coach</h2>
+                <button
+                  type="button"
+                  onClick={fetchCoach}
+                  disabled={coachLoading}
+                  className="text-xs text-[#A0785A] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Refresh AI coaching recommendations"
+                >
+                  <RotateCw size={12} className={coachLoading ? "animate-spin" : ""} />
+                  <span>Refresh</span>
+                </button>
               </div>
               {coach ? (
                 <div className="flex flex-col gap-3 flex-1">
@@ -1452,25 +1816,71 @@ export default function DashboardPage() {
           {/* ── Active Timer + Today's Tasks ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Timer */}
-            <div className="bg-white rounded-2xl border border-[#E8E2D9] p-6 flex flex-col items-center justify-center gap-4">
+            <div className="bg-white rounded-2xl border border-[#E8E2D9] p-6 flex flex-col items-center justify-center gap-3 text-center">
               <div className="w-12 h-12 rounded-2xl bg-[#F5EFE8] flex items-center justify-center">
-                <Clock size={22} className="text-[#A0785A]" />
+                <Clock size={22} className={`text-[#A0785A] ${activeSession ? "animate-pulse" : ""}`} />
               </div>
               <div>
-                <p className="text-center text-xs text-[#6B7280] mb-1">
-                  {activeSession ? "Session in progress" : "No active session"}
+                <p className="text-center text-xs text-[#6B7280] mb-0.5">
+                  {activeSession ? "Session in progress" : "Focus Timer"}
                 </p>
-                <p className="font-heading text-4xl font-700 text-[#1A1A1A] text-center tabular-nums">
+                {activeSession && (
+                  <p className="text-xs font-semibold text-[#A0785A] truncate max-w-[200px] mx-auto">
+                    {tasks.find((t) => t.id === activeSession)?.title || "Active Task"}
+                  </p>
+                )}
+                <p className="font-heading text-4xl font-700 text-[#1A1A1A] text-center tabular-nums mt-1">
                   {fmtTime(elapsed)}
                 </p>
               </div>
-              {activeSession && (
+
+              {activeSession ? (
                 <button
+                  type="button"
                   onClick={() => stopSession()}
-                  className="flex items-center gap-2 bg-[#DC2626] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-700 transition-all"
+                  className="flex items-center gap-2 bg-[#DC2626] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-700 transition-all cursor-pointer shadow-xs"
                 >
-                  <Square size={13} fill="white" /> Stop
+                  <Square size={13} fill="white" /> Stop Session
                 </button>
+              ) : (
+                <div className="w-full space-y-2 mt-1">
+                  {tasks.filter((t) => t.status !== "completed").length > 0 ? (
+                    <>
+                      <select
+                        value={timerSelectedTaskId}
+                        onChange={(e) => setTimerSelectedTaskId(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-[#E8E2D9] text-[#1A1A1A] bg-[#FAFAF8] focus:outline-none focus:border-[#A0785A]"
+                      >
+                        <option value="">Select a task to focus on...</option>
+                        {tasks
+                          .filter((t) => t.status !== "completed")
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.title} ({t.estimatedMinutes}m)
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!timerSelectedTaskId}
+                        onClick={() => {
+                          const task = tasks.find((t) => t.id === timerSelectedTaskId);
+                          if (task) startSession(task);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 bg-[#A0785A] text-white px-4 py-2 rounded-xl text-xs font-semibold hover:bg-[#7D5C42] transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                      >
+                        <Play size={12} fill="white" /> Start Timer
+                      </button>
+                    </>
+                  ) : (
+                    <Link
+                      href="/tasks"
+                      className="inline-block text-xs text-[#A0785A] hover:underline font-semibold"
+                    >
+                      + Create a task to start tracking
+                    </Link>
+                  )}
+                </div>
               )}
             </div>
 

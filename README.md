@@ -136,6 +136,18 @@ The expected workflow is:
             - [x] Full Task Update Endpoint (`PUT /tasks/{id}` in `TaskController.java` & `TaskService.java`) - done
             - [x] Timezone & Robust Schedule Parser — `formatLocalDate()` local calendar alignment, crash-proof `toMinutes()` parsing, and automatic snake_case / camelCase `normalizeBlock` mapper - done
             - [x] Comprehensive 38-File System Documentation Suite in `project-docs/` (System Context, Architecture, Services, Data Models, Sequence Flows, Operations, and Mermaid diagrams) - done
+            - [x] 7×24 Weekly Hour Map Grid (`WeeklyHourGrid`) — live task color-coding, grey=empty, green=completed, red=genuinely overdue; default circadian sleep blocks rendered across all 7 days - done
+            - [x] `HourDetailModal` — slot collision detection, auto-nearest-free-slot finder, recurring 7-day selector with Mon–Fri & All 7 presets, inline conflict badge, pencil edit icon, delete button per scheduled item, circadian sleep override toggle - done
+            - [x] `scheduling.ts` shared library — `findNearestFreeSlot()`, `checkIntervalConflict()`, `getOccupiedIntervalsFromTasks()`, `buildWeeklyHourGrid()`, `validateSlot()`, `parseTimeToMinutes()`, `formatMinutesTo12Hour()`, `formatMinutesTo24Hour()` - done
+            - [x] Create Task (Manual) modal — Start Time optional field with auto-assign, real-time `End Time = Start Time + Duration` calculation, slot-occupied amber banner with "Apply Suggested Time" action, auto-assigned range display - done
+            - [x] Edit Task Modal in `/tasks` — pre-filled title, duration, priority, recurrence, color; wired to `PUT /tasks/{id}` with optimistic local state update; pencil icon on every task card - done
+            - [x] Task search bar with instant filter and clear (✕) button in `/tasks` - done
+            - [x] Task status filter pills (All / Pending / In Progress / Completed) with live counts in `/tasks` - done
+            - [x] Forgot Password interactive modal on `/auth/login` — email submission, success confirmation state, replaces dead `<a href="#">` link - done
+            - [x] Mobile sidebar bottom navigation bar (`md:hidden`) — Dashboard, Tasks, Schedule, Sign Out - done
+            - [x] Pricing section on landing page — Personal Starter (\$0) and Pro Performance (\$12) plans, fixing dead `#pricing` anchor - done
+            - [x] Dashboard Timer card — idle task selector dropdown + Start Timer button when no session active; shows active task title and animated clock icon during session - done
+            - [x] AI Coach Refresh button (↺) with loading spinner on Dashboard — calls `/ai/coach/analyze` on demand without page reload - done
 13. Unit Testing - done
     - [x] `UserServiceTest.java` (User registration & duplicate prevention & login brute-force lock unit tests) - done
     - [x] `TaskServiceTest.java` (Task creation, user tasks retrieval, status lifecycle & ownership tests) - done
@@ -177,6 +189,36 @@ Whenever a phase is required, stop and complete it before moving to the next one
 When a task is completed, write "done" beside it.
 
 Never skip software engineering steps simply to write code faster.
+
+---
+
+## 📊 SDLC Phase Status Summary
+
+| # | Phase | Status |
+|---|-------|--------|
+| 1 | Requirement Analysis | ✅ Done |
+| 2 | Functional Requirements | ✅ Done |
+| 3 | Non-Functional Requirements | ✅ Done |
+| 4 | User Stories | ✅ Done |
+| 5 | Use Cases | ✅ Done |
+| 6 | UML Modeling | ✅ Done |
+| 7 | System Architecture | ✅ Done |
+| 8 | Database Design | ✅ Done |
+| 9 | API Design | ✅ Done |
+| 10 | Security Design | ✅ Done |
+| 11 | UI/UX Design | ✅ Done |
+| 12 | Development | ✅ Done |
+| 13 | Unit Testing | ✅ Done (26 Java + 8 Python, 0 PMD violations) |
+| 14 | Integration Testing | 🔄 In Progress (mock-validated, pending live infra) |
+| 15 | End-to-End Testing | ⏳ Pending |
+| 16 | Performance Testing | ⏳ Pending |
+| 17 | Security Testing | 🔄 In Progress (JWT, PMD, rate limiting, AES-256 done) |
+| 18 | Deployment | 🔄 Plan documented, cloud server not yet provisioned |
+| 19 | Monitoring | ⏳ Pending |
+| 20 | Maintenance | ⏳ Pending |
+| 21 | Continuous Improvement | ⏳ Ongoing |
+
+> **Current Position:** Actively developing (Phase 12 complete), security hardening (Phase 17 in progress), awaiting cloud domain + server for deployment (Phase 18).
 
 ---
 

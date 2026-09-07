@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Zap, ChevronRight } from "lucide-react";
+import { Zap, ChevronRight, Check } from "lucide-react";
 
 export default function LandingPage() {
   return (
@@ -70,6 +70,108 @@ export default function LandingPage() {
             </Link>
           </div>
           <p className="text-xs text-[#6B7280] mt-4">No credit card required. Free forever for personal use.</p>
+        </div>
+      </section>
+
+      {/* ── PRICING ── */}
+      <section id="pricing" className="py-20 px-6 bg-[#FAFAF8] border-t border-[#E8E2D9]">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center max-w-xl mx-auto mb-14">
+            <div className="inline-flex items-center gap-1.5 bg-[#F5EFE8] text-[#A0785A] text-xs font-semibold px-3 py-1 rounded-full mb-3 uppercase tracking-wider">
+              Transparent Plans
+            </div>
+            <h2 className="font-heading text-3xl md:text-4xl font-700 text-[#1A1A1A] mb-3">
+              Simple, transparent pricing
+            </h2>
+            <p className="text-sm text-[#6B7280]">
+              Start with all core features for free. Upgrade whenever you need enterprise-grade AI coaching and advanced calendar sync.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
+            {/* Free Plan */}
+            <div className="bg-white rounded-2xl border border-[#E8E2D9] p-8 flex flex-col justify-between shadow-xs">
+              <div>
+                <h3 className="font-heading text-lg font-700 text-[#1A1A1A]">Personal Starter</h3>
+                <p className="text-xs text-[#6B7280] mt-1 mb-5">Everything you need to master your daily time.</p>
+                <div className="flex items-baseline gap-1 mb-6">
+                  <span className="font-heading text-4xl font-800 text-[#1A1A1A]">$0</span>
+                  <span className="text-xs text-[#6B7280]">/ forever</span>
+                </div>
+                <ul className="space-y-3 text-xs text-[#4B5563]">
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>Interactive 7×24 Weekly Hour Map</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>Real-time focus timer & time tracking</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>Task creation, recurrence & slot collision detection</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>Circadian sleep window optimization</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>Productivity analytics & weekly metrics</span>
+                  </li>
+                </ul>
+              </div>
+              <Link
+                href="/auth/register"
+                className="w-full mt-8 py-3 rounded-xl border border-[#A0785A] text-[#A0785A] text-sm font-semibold hover:bg-[#F5EFE8] transition-all text-center"
+              >
+                Get Started Free
+              </Link>
+            </div>
+
+            {/* Pro Plan */}
+            <div className="bg-white rounded-2xl border-2 border-[#A0785A] p-8 flex flex-col justify-between shadow-md relative">
+              <div className="absolute -top-3 right-6 bg-[#A0785A] text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full">
+                Most Popular
+              </div>
+              <div>
+                <h3 className="font-heading text-lg font-700 text-[#1A1A1A]">Pro Performance</h3>
+                <p className="text-xs text-[#6B7280] mt-1 mb-5">For ambitious professionals aiming for peak cognitive efficiency.</p>
+                <div className="flex items-baseline gap-1 mb-6">
+                  <span className="font-heading text-4xl font-800 text-[#A0785A]">$12</span>
+                  <span className="text-xs text-[#6B7280]">/ month</span>
+                </div>
+                <ul className="space-y-3 text-xs text-[#4B5563]">
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>Everything in Personal Starter</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>AI Constraint-based schedule optimization</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>Personalized AI cognitive coaching & weakness detection</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>Hierarchical sprint goal decomposition</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check size={15} className="text-[#16A34A] shrink-0" />
+                    <span>Burnout risk scoring & estimation bias calibration</span>
+                  </li>
+                </ul>
+              </div>
+              <Link
+                href="/auth/register"
+                className="w-full mt-8 py-3 rounded-xl bg-[#A0785A] text-white text-sm font-semibold hover:bg-[#7D5C42] transition-all text-center shadow-xs"
+              >
+                Start Pro Trial
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 

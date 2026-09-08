@@ -21,24 +21,34 @@ public class AesEncryptionConverter implements AttributeConverter<String, String
     private static final String ALGORITHM = "AES/GCM/NoPadding";
     private static final int GCM_TAG_LENGTH = 128;
     private static final int IV_LENGTH_BYTE = 12;
-    private static final String DEFAULT_DEV_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 
     private static SecretKey secretKey;
 
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public AesEncryptionConverter(@Value("${app.encryption.key:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}") String base64Key) {
+    public AesEncryptionConverter(@Value("${app.encryption.key}") String base64Key) {
+        if (base64Key == null || base64Key.length() < 32) {
+            throw new IllegalStateException("Encryption key must be at least 32 bytes");
+        }
         initSecretKey(base64Key);
     }
 
     public AesEncryptionConverter() {
         if (secretKey == null) {
-            initSecretKey(DEFAULT_DEV_KEY);
+            throw new IllegalStateException("Encryption key must be configured via app.encryption.key");
         }
     }
 
     private static synchronized void initSecretKey(String base64Key) {
-        byte[] decodedKey = Base64.getDecoder().decode(base64Key != null ? base64Key.trim() : DEFAULT_DEV_KEY);
+        byte[] decodedKey;
+        try {
+            decodedKey = Base64.getDecoder().decode(base64Key.trim());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Encryption key must be valid Base64", e);
+        }
+        if (decodedKey.length < 32) {
+            throw new IllegalStateException("Encryption key must be at least 32 bytes");
+        }
         secretKey = new SecretKeySpec(decodedKey, 0, decodedKey.length, "AES");
     }
 

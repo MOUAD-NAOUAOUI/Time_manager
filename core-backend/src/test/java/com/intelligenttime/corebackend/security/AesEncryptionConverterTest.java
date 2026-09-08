@@ -11,7 +11,7 @@ public class AesEncryptionConverterTest {
 
     @BeforeEach
     void setUp() {
-        converter = new AesEncryptionConverter("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
+        converter = new AesEncryptionConverter("dGVzdC1hZXMtMjU2LWtleS1ub3QtZm9yLXByb2QhIQ==");
     }
 
     @Test

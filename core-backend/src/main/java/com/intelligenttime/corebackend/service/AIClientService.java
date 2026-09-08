@@ -27,16 +27,15 @@ public class AIClientService {
     @Autowired
     public AIClientService(
             @Value("${ai.service.url:http://127.0.0.1:8000}") String aiServiceUrl,
-            @Value("${ai.service.internal-token:dev-internal-token}") String internalToken,
+            @Value("${ai.service.internal-token}") String internalToken,
             TaskService taskService) {
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException("AI_SERVICE_INTERNAL_TOKEN must be set");
+        }
         this.aiServiceUrl = aiServiceUrl;
         this.internalToken = internalToken;
         this.taskService = taskService;
         this.restTemplate = new RestTemplate();
-    }
-
-    public AIClientService(String aiServiceUrl, TaskService taskService) {
-        this(aiServiceUrl, "dev-internal-token", taskService);
     }
 
     public DecomposeGoalResponse decomposeGoal(String userEmail, String goal, Integer targetHours) {

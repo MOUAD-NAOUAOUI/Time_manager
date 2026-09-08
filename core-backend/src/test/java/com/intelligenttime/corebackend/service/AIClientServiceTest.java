@@ -12,7 +12,7 @@ public class AIClientServiceTest {
 
     @BeforeEach
     void setUp() {
-        aiClientService = new AIClientService("http://127.0.0.1:8000", null);
+        aiClientService = new AIClientService("http://127.0.0.1:8000", "test-internal-token", null);
     }
 
     @Test

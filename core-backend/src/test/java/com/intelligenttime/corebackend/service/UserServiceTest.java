@@ -39,7 +39,7 @@ public class UserServiceTest {
 
     @BeforeEach
     void setUp() {
-        jwtService = new JwtService();
+        jwtService = new JwtService("test-jwt-secret-at-least-32-chars-long", 86400000);
         rateLimiterService = new RateLimiterService(null, 3, 10, 60);
         userService = new UserService(userRepository, subscriptionRepository, jwtService, rateLimiterService);
     }

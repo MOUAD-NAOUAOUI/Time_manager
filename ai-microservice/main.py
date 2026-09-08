@@ -41,12 +41,15 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Internal Token Authentication Middleware
 # ---------------------------------------------------------------------------
+INTERNAL_TOKEN = os.getenv("AI_SERVICE_INTERNAL_TOKEN")
+if INTERNAL_TOKEN is None:
+    raise ValueError("AI_SERVICE_INTERNAL_TOKEN must be set")
+
 @app.middleware("http")
 async def require_internal_token(request: Request, call_next):
     public_paths = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
     if request.url.path not in public_paths:
-        expected = os.getenv("AI_SERVICE_INTERNAL_TOKEN", "dev-internal-token")
-        if request.headers.get("X-Internal-Token") != expected:
+        if request.headers.get("X-Internal-Token") != INTERNAL_TOKEN:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Internal service authentication required"}

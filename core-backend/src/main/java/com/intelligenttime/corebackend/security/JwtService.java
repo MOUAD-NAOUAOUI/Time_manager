@@ -14,19 +14,15 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
-    private static final String DEFAULT_SECRET = "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970";
-    private static final long DEFAULT_EXPIRATION = 86400000;
-
     private final Key signingKey;
     private final long expirationTime;
 
-    public JwtService() {
-        this(DEFAULT_SECRET, DEFAULT_EXPIRATION);
-    }
-
     public JwtService(
-            @Value("${jwt.secret:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}") String secret,
+            @Value("${jwt.secret}") String secret,
             @Value("${jwt.expiration:86400000}") long expirationTime) {
+        if (secret == null || secret.length() < 32) {
+            throw new IllegalStateException("JWT secret must be at least 32 characters");
+        }
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationTime = expirationTime;
     }

@@ -43,4 +43,4 @@ flowchart LR
 
 ## 2. API Contract Protocols
 - **Client to Spring Boot**: Authorization: Bearer <jwt_token>
-- **Spring Boot to AI Microservice**: X-Internal-Token: dev-internal-token or Authorization: Bearer <AI_SERVICE_INTERNAL_TOKEN>
+- **Spring Boot to AI Microservice**: X-Internal-Token: <AI_SERVICE_INTERNAL_TOKEN>

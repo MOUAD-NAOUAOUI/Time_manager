@@ -33,6 +33,7 @@ interface Task {
   color: string;
   actualMinutesSpent?: number;
   deadline?: string;
+  recurrence?: string;
   createdAt?: string;
 }
 
@@ -118,7 +119,7 @@ function HourDetailModal({
   tasks: Task[];
   onToggleTask?: (taskId: string, currentStatus: string) => void;
   onScheduleItem: (item: ScheduledItem, dateKeys: string | string[], oldItemId?: string) => void;
-  onDeleteItem?: (itemId: string) => void;
+  onDeleteItem?: (itemId: string, taskId?: string) => void;
   cellMap: Map<string, HourCellDetail>;
   sleepConfig: SleepConfig;
   days: Date[];
@@ -258,7 +259,7 @@ function HourDetailModal({
 
   const handleDeleteItem = (item: ScheduledItem) => {
     if (onDeleteItem) {
-      onDeleteItem(item.id);
+      onDeleteItem(item.id, item.taskId);
       if (editingItem?.id === item.id) {
         handleCancelEdit();
       }
@@ -766,11 +767,15 @@ function WeeklyHourGrid({
   schedules,
   userSleep = DEFAULT_SLEEP_CONFIG,
   onToggleTask,
+  onDeleteTask,
+  onTaskCreated,
 }: {
   tasks: Task[];
   schedules: Record<string, WeeklySchedule>;
   userSleep?: SleepConfig;
   onToggleTask?: (taskId: string, currentStatus: string) => void;
+  onDeleteTask?: (taskId: string) => void;
+  onTaskCreated?: () => void;
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const today = new Date();
@@ -796,27 +801,23 @@ function WeeklyHourGrid({
       const saved = localStorage.getItem(key);
       if (saved) {
         const parsed: Record<string, ScheduledItem[]> = JSON.parse(saved);
-        // Clean up legacy pending items in the past that caused false "missed" hours
+        // Clean up legacy pending items from PREVIOUS weeks only, to preserve all 7 days of current week
         const now = new Date();
-        const currentDayKey = formatLocalDate(now);
-        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        const currentWeekStart = new Date(now);
+        currentWeekStart.setHours(0, 0, 0, 0);
+        currentWeekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7)); // Monday of current week
+        const currentWeekStartKey = formatLocalDate(currentWeekStart);
         let changed = false;
 
         const cleaned: Record<string, ScheduledItem[]> = {};
         for (const [dKey, items] of Object.entries(parsed)) {
-          if (dKey < currentDayKey) {
-            // Past day: retain only completed items
+          if (dKey < currentWeekStartKey) {
+            // Prior weeks: retain only completed items
             const remaining = items.filter((it) => it.status === "completed");
             if (remaining.length !== items.length) changed = true;
             if (remaining.length > 0) cleaned[dKey] = remaining;
-          } else if (dKey === currentDayKey) {
-            // Today: retain completed items or items whose start time has not passed yet
-            const remaining = items.filter(
-              (it) => it.status === "completed" || ((it.startHour * 60 + (it.startMinute || 0)) >= nowMinutes)
-            );
-            if (remaining.length !== items.length) changed = true;
-            cleaned[dKey] = remaining;
           } else {
+            // Current week & future weeks: preserve all scheduled items across all 7 days!
             cleaned[dKey] = items;
           }
         }
@@ -841,7 +842,7 @@ function WeeklyHourGrid({
     return () => window.removeEventListener("storage", handleStorage);
   }, [email]);
 
-  const saveManualItem = (
+  const saveManualItem = async (
     item: ScheduledItem,
     dateKeys: string | string[],
     oldItemId?: string
@@ -852,8 +853,39 @@ function WeeklyHourGrid({
       : item.id.replace(/_\d{4}-\d{2}-\d{2}$/, "");
 
     const startMins = (item.startHour ?? 9) * 60 + (item.startMinute ?? 0);
-    // Apply user rule: never schedule in past of current week; if passed today start tomorrow; schedule next week starting from Monday!
-    const { allDates } = getValidScheduleDates(rawKeys, startMins, new Date(), true);
+    const isRecurring = rawKeys.length > 1;
+    // Get valid schedule dates for all selected days (both current week and next week)
+    const { allDates } = getValidScheduleDates(rawKeys, startMins, new Date(), isRecurring);
+
+    // If this item does not have a taskId in the backend, persist it to the database
+    let assignedTaskId = item.taskId;
+    if (!assignedTaskId && email) {
+      try {
+        const lastDate = allDates[allDates.length - 1] || rawKeys[rawKeys.length - 1];
+        const [ly, lm, ld] = lastDate.split("-").map(Number);
+        const deadlineDate = new Date(ly, lm - 1, ld, item.startHour || 9, item.startMinute || 0, 0);
+        const res = await fetchWithAuth(`${API_URL}/tasks`, {
+          method: "POST",
+          body: JSON.stringify({
+            title: item.title,
+            estimatedMinutes: item.durationMinutes,
+            color: item.color || BRAND,
+            deadline: deadlineDate.toISOString(),
+            userEmail: email,
+            recurrence: isRecurring ? "weekly" : "none",
+          }),
+        });
+        if (res.ok) {
+          const created = await res.json().catch(() => null);
+          if (created?.id) {
+            assignedTaskId = created.id;
+            onTaskCreated?.();
+          }
+        }
+      } catch (err) {
+        console.warn("Could not persist scheduled task to backend:", err);
+      }
+    }
 
     setManualItems((prev) => {
       const updated = { ...prev };
@@ -867,14 +899,15 @@ function WeeklyHourGrid({
         }
       }
 
-      // Add to each valid scheduled day
+      // Add to each scheduled day across all selected days (all 7 days for recurring)
       for (const dKey of allDates) {
         const existing = updated[dKey] || [];
         const itemForDay: ScheduledItem = {
           ...item,
           id: `${baseId}_${dKey}`,
+          taskId: assignedTaskId || item.taskId,
         };
-        // Avoid duplicate
+        // Avoid duplicate in same slot
         const filtered = existing.filter(
           (it) => it.id !== itemForDay.id && !(it.startHour === item.startHour && it.title === item.title)
         );
@@ -890,13 +923,13 @@ function WeeklyHourGrid({
     });
   };
 
-  const deleteManualItem = (itemId: string) => {
+  const deleteManualItem = (itemId: string, taskId?: string) => {
     const baseId = itemId.replace(/_\d{4}-\d{2}-\d{2}$/, "");
     setManualItems((prev) => {
       const updated = { ...prev };
       for (const dKey of Object.keys(updated)) {
         updated[dKey] = (updated[dKey] || []).filter(
-          (it) => it.id !== itemId && !it.id.startsWith(baseId)
+          (it) => it.id !== itemId && !it.id.startsWith(baseId) && (!taskId || it.taskId !== taskId)
         );
       }
       if (typeof window !== "undefined") {
@@ -906,6 +939,9 @@ function WeeklyHourGrid({
       }
       return updated;
     });
+    if (taskId && onDeleteTask) {
+      onDeleteTask(taskId);
+    }
   };
 
   const taskById = new Map(tasks.map((task) => [task.id, task]));
@@ -950,10 +986,11 @@ function WeeklyHourGrid({
     for (const t of tasks) {
       if (!t.deadline) continue;
       const dStr = t.deadline.slice(0, 10);
-      if (dStr === dKey && !list.some((it) => it.taskId === t.id)) {
+      const isRecurringWeekly = t.recurrence === "weekly";
+      if ((dStr === dKey || isRecurringWeekly) && !list.some((it) => it.taskId === t.id)) {
         const dHour = t.deadline.includes("T") ? new Date(t.deadline).getHours() : 17;
         list.push({
-          id: t.id,
+          id: `${t.id}_${dKey}`,
           taskId: t.id,
           title: t.title,
           durationMinutes: t.estimatedMinutes || 30,
@@ -1295,12 +1332,13 @@ export default function DashboardPage() {
 
   // Fetch analytics + tasks on mount
   useEffect(() => {
-    fetchWithAuth(`${API_URL}/analytics/dashboard`)
+    const emailParam = email ? `?email=${encodeURIComponent(email)}` : "";
+    fetchWithAuth(`${API_URL}/analytics/dashboard${emailParam}`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setAnalytics(d))
       .catch(() => { });
 
-    fetchWithAuth(`${API_URL}/tasks`)
+    fetchWithAuth(`${API_URL}/tasks${emailParam}`)
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setTasks(d))
       .catch(() => { });
@@ -1319,7 +1357,7 @@ export default function DashboardPage() {
     })).then((entries) => setWeeklySchedules(Object.fromEntries(entries))).catch(() => { });
 
     // Fetch any currently running active session
-    fetchWithAuth(`${API_URL}/sessions/active`)
+    fetchWithAuth(`${API_URL}/sessions/active${emailParam}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((active) => {
         if (active && active.id && active.status === "running") {
@@ -1462,15 +1500,28 @@ export default function DashboardPage() {
   }, [activeSession]);
 
   const fetchAllData = () => {
-    fetchWithAuth(`${API_URL}/analytics/dashboard`)
+    const emailParam = email ? `?email=${encodeURIComponent(email)}` : "";
+    fetchWithAuth(`${API_URL}/analytics/dashboard${emailParam}`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setAnalytics(d))
       .catch(() => { });
 
-    fetchWithAuth(`${API_URL}/tasks`)
+    fetchWithAuth(`${API_URL}/tasks${emailParam}`)
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setTasks(d))
       .catch(() => { });
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const res = await fetchWithAuth(`${API_URL}/tasks/${taskId}?email=${encodeURIComponent(email)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+        fetchAllData();
+      }
+    } catch { /* ignore */ }
   };
 
   const handleAddMinutes = async (mins: number) => {
@@ -1577,14 +1628,15 @@ export default function DashboardPage() {
       }
     }
     try {
+      const emailParam = email ? `?email=${encodeURIComponent(email)}` : "";
       if (sessionId) {
-        await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
+        await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop${emailParam}`, { method: "PUT" });
       } else {
-        const res = await fetchWithAuth(`${API_URL}/sessions/active`);
+        const res = await fetchWithAuth(`${API_URL}/sessions/active${emailParam}`);
         if (res.ok) {
           const active = await res.json();
           if (active?.id) {
-            await fetchWithAuth(`${API_URL}/sessions/${active.id}/stop`, { method: "PUT" });
+            await fetchWithAuth(`${API_URL}/sessions/${active.id}/stop${emailParam}`, { method: "PUT" });
           }
         }
       }
@@ -1719,6 +1771,8 @@ export default function DashboardPage() {
             schedules={weeklySchedules}
             userSleep={userSleep}
             onToggleTask={toggleTaskStatus}
+            onDeleteTask={handleDeleteTask}
+            onTaskCreated={fetchAllData}
           />
           <GlobalRecords analytics={analytics} />
 

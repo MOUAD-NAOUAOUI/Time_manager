@@ -6,6 +6,7 @@ import type { NextRequest } from "next/server";
 //  Public routes  → accessible without authentication
 //  Protected routes → redirect to /auth/login if no auth_token cookie
 //  Auth routes    → redirect to /dashboard if already authenticated
+//  API proxy routes → always pass through (never intercepted)
 //
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -22,8 +23,13 @@ function isAuthPath(pathname: string): boolean {
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const token = request.cookies.get("auth_token")?.value;
 
+  // Always pass through API proxy routes — these are backend calls, not pages
+  if (pathname.startsWith("/api/") || pathname.startsWith("/aiapi/")) {
+    return NextResponse.next();
+  }
+
+  const token = request.cookies.get("auth_token")?.value;
   const isAuthenticated = Boolean(token && token.length > 10);
 
   // Authenticated user trying to visit login/register → send to dashboard

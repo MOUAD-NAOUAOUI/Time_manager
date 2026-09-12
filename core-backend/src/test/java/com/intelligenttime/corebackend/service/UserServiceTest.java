@@ -20,7 +20,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,8 +38,12 @@ public class UserServiceTest {
 
     @BeforeEach
     void setUp() {
-        jwtService = new JwtService("test-jwt-secret-at-least-32-chars-long", 86400000);
-        rateLimiterService = new RateLimiterService(null, 3, 10, 60);
+        // Mock Redis StringRedisTemplate for JwtService
+        org.springframework.data.redis.core.StringRedisTemplate mockRedisTemplate = mock(org.springframework.data.redis.core.StringRedisTemplate.class);
+        when(mockRedisTemplate.hasKey("jwt:blacklist:any-token")).thenReturn(false);
+        
+        jwtService = new JwtService("test-jwt-secret-at-least-32-chars-long", 86400000, mockRedisTemplate);
+        rateLimiterService = new RateLimiterService(mockRedisTemplate, 3, 10, 60);
         userService = new UserService(userRepository, subscriptionRepository, jwtService, rateLimiterService);
     }
 

@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { API_URL } from "@/lib/api";
 
 export default function RegisterPage() {
@@ -11,29 +11,36 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ email: "", password: "", timezone: "UTC" });
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        credentials: "include",
+        body: JSON.stringify({ ...form, email: form.email.trim() }),
       });
       if (res.ok) {
         const data = await res.json();
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("email", data.email || form.email);
-        document.cookie = `auth_token=${data.token}; path=/; SameSite=Strict; max-age=86400`;
+        localStorage.setItem("email", data.email || form.email.trim());
         router.push("/dashboard");
       } else {
-        const err = await res.json();
-        alert(err.message || "Registration failed. Email may already be in use.");
+        const err = await res.json().catch(() => null);
+        const msg = err?.message || "";
+        if (res.status === 409) {
+          setError("An account with this email already exists. Try signing in instead.");
+        } else if (res.status === 400 && msg.toLowerCase().includes("password")) {
+          setError("Password must be at least 8 characters with uppercase, lowercase, a number, and a special character (@#$%^&+=!_-.).");
+        } else {
+          setError(msg || "Registration failed. Please check your details and try again.");
+        }
       }
-    } catch (err: unknown) {
-      alert("Registration Connection Error: " + (err instanceof Error ? err.message : String(err)));
-      console.error("Fetch error details:", err);
+    } catch {
+      setError("Cannot connect to the server. Please check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -53,6 +60,14 @@ export default function RegisterPage() {
           <h1 className="font-heading text-2xl font-700 text-[#1A1A1A] mb-1">Create your account</h1>
           <p className="text-sm text-[#6B7280] mb-8">Start managing your time intelligently — for free.</p>
 
+          {/* Inline error banner */}
+          {error && (
+            <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm mb-5">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             {/* Email */}
             <div>
@@ -65,7 +80,7 @@ export default function RegisterPage() {
                 required
                 placeholder="you@example.com"
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                onChange={(e) => { setForm({ ...form, email: e.target.value }); setError(null); }}
                 className="w-full px-4 py-3 rounded-xl border border-[#E8E2D9] text-[#1A1A1A] text-sm bg-white placeholder:text-[#6B7280] focus:outline-none focus:border-[#A0785A] focus:ring-2 focus:ring-[#A0785A]/15 transition-all"
               />
             </div>
@@ -83,7 +98,7 @@ export default function RegisterPage() {
                   minLength={8}
                   placeholder="Min. 8 characters"
                   value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, password: e.target.value }); setError(null); }}
                   className="w-full px-4 py-3 pr-11 rounded-xl border border-[#E8E2D9] text-[#1A1A1A] text-sm bg-white placeholder:text-[#6B7280] focus:outline-none focus:border-[#A0785A] focus:ring-2 focus:ring-[#A0785A]/15 transition-all"
                 />
                 <button
@@ -94,6 +109,9 @@ export default function RegisterPage() {
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              <p className="text-xs text-[#9CA3AF] mt-1.5">
+                Min. 8 chars · uppercase · lowercase · number · special character (@#\$%^&amp;+=!_-.)
+              </p>
             </div>
 
             {/* Timezone */}
@@ -122,7 +140,11 @@ export default function RegisterPage() {
               disabled={loading}
               className="flex items-center justify-center gap-2 bg-[#A0785A] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[#7D5C42] transition-all hover:shadow-lg hover:shadow-[#A0785A]/25 disabled:opacity-60 disabled:cursor-not-allowed mt-1"
             >
-              {loading ? "Creating account..." : <>Create account <ArrowRight size={15} /></>}
+              {loading ? (
+                <><Loader2 size={15} className="animate-spin" /> Creating account...</>
+              ) : (
+                <>Create account <ArrowRight size={15} /></>
+              )}
             </button>
           </form>
         </div>

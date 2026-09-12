@@ -35,7 +35,14 @@ public class AesEncryptionConverter implements AttributeConverter<String, String
 
     public AesEncryptionConverter() {
         if (secretKey == null) {
-            throw new IllegalStateException("Encryption key must be configured via app.encryption.key");
+            String configuredKey = System.getenv("APP_ENCRYPTION_KEY");
+            if (configuredKey == null || configuredKey.isBlank()) {
+                configuredKey = System.getProperty("APP_ENCRYPTION_KEY");
+            }
+            if (configuredKey == null || configuredKey.isBlank()) {
+                throw new IllegalStateException("Encryption key must be configured via app.encryption.key");
+            }
+            initSecretKey(configuredKey);
         }
     }
 

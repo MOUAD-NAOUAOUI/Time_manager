@@ -52,6 +52,9 @@ public class TimeSessionController {
         String targetEmail = (authentication != null && authentication.getName() != null)
                 ? authentication.getName()
                 : email;
+        if (targetEmail == null || targetEmail.isBlank()) {
+            throw new com.intelligenttime.corebackend.exception.UnauthorizedException("User email or authentication required to stop session");
+        }
         return ResponseEntity.ok(sessionService.stopSession(id, targetEmail));
     }
 }

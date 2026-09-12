@@ -2,54 +2,85 @@ package com.intelligenttime.corebackend.security;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.lang.NonNull;
+import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+
 import java.io.IOException;
 import java.util.Collections;
 
-import org.springframework.stereotype.Component;
-
+/**
+ * Authenticates requests by reading the JWT from the httpOnly {@code auth_token}
+ * cookie. Falls back to the {@code Authorization: Bearer} header so that
+ * machine-to-machine clients (e.g. the AI microservice) continue to work.
+ *
+ * Cookie-based delivery is preferred for browser clients because it prevents
+ * JavaScript from ever reading the token (httpOnly), eliminating XSS theft.
+ */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
-    // Injected JWT utility service for token parsing and validation
+
     private final JwtService jwtService;
 
     public JwtAuthenticationFilter(JwtService jwtService) {
         this.jwtService = jwtService;
     }
 
-    // Called automatically by Spring for every incoming HTTP request
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
-            @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain)
+                                    @NonNull HttpServletResponse response,
+                                    @NonNull FilterChain filterChain)
             throws ServletException, IOException {
 
-        // Read the Authorization header from the incoming request
-        final String authHeader = request.getHeader("Authorization");
-        // If no Authorization header or it doesn't start with "Bearer ", skip this
-        // filter
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response);
-            return;
+        String token = extractTokenFromCookie(request);
+        if (token == null) {
+            token = extractTokenFromHeader(request);
         }
 
-        // Extract the raw JWT token by removing the "Bearer " prefix (7 characters)
-        final String token = authHeader.substring(7);
-        final String email = jwtService.extractEmail(token);
-        // Only set authentication if email is valid and not already authenticated
-        if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            if (jwtService.validateToken(token, email)) {
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(email, null,
-                        Collections.emptyList());
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+        if (token != null) {
+            try {
+                String email = jwtService.extractEmail(token);
+                if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                    if (jwtService.validateToken(token, email)) {
+                        UsernamePasswordAuthenticationToken authToken =
+                                new UsernamePasswordAuthenticationToken(email, null, Collections.emptyList());
+                        SecurityContextHolder.getContext().setAuthentication(authToken);
+                    }
+                }
+            } catch (Exception ignored) {
+                // Invalid token — continue unauthenticated; Spring Security will reject
+                // the request at the authorization step if the route requires auth.
             }
         }
-        // Pass the request to the next filter in the chain
+
         filterChain.doFilter(request, response);
+    }
+
+    /** Reads the JWT from the httpOnly {@code auth_token} cookie. */
+    private String extractTokenFromCookie(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) return null;
+        for (Cookie cookie : cookies) {
+            if ("auth_token".equals(cookie.getName())) {
+                String value = cookie.getValue();
+                return (value != null && !value.isBlank()) ? value : null;
+            }
+        }
+        return null;
+    }
+
+    /** Reads the JWT from the {@code Authorization: Bearer <token>} header. */
+    private String extractTokenFromHeader(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            String value = header.substring(7);
+            return !value.isBlank() ? value : null;
+        }
+        return null;
     }
 }

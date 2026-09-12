@@ -35,12 +35,22 @@ public class TimeSessionService {
     }
 
     @Transactional
-    public SessionResponse startSession(StartSessionRequest request) {
+    public synchronized SessionResponse startSession(StartSessionRequest request) {
+        Objects.requireNonNull(request, "request");
         User user = userRepository.findByEmail(request.getUserEmail())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.getUserEmail()));
 
-        // Auto-finalize any previously running sessions for this user so they are never blocked
+        // Auto-finalize any previously running sessions for this user so they are never
+        // blocked
         List<TimeSession> runningSessions = sessionRepository.findAllByUserIdAndStatus(user.getId(), "running");
+        UUID requestedTaskId = request.getTaskId();
+        if (runningSessions.size() == 1) {
+            TimeSession runningSession = runningSessions.get(0);
+            UUID activeTaskId = runningSession.getTask() != null ? runningSession.getTask().getId() : null;
+            if (Objects.equals(activeTaskId, requestedTaskId)) {
+                return mapToResponse(runningSession);
+            }
+        }
         for (TimeSession prevSession : runningSessions) {
             ZonedDateTime now = ZonedDateTime.now();
             prevSession.setEndTime(now);
@@ -54,7 +64,8 @@ public class TimeSessionService {
                 prevSession.setDurationMinutes(durationMinutes);
                 if (prevSession.getTask() != null) {
                     Task prevTask = prevSession.getTask();
-                    int previousMinutes = prevTask.getActualMinutesSpent() != null ? prevTask.getActualMinutesSpent() : 0;
+                    int previousMinutes = prevTask.getActualMinutesSpent() != null ? prevTask.getActualMinutesSpent()
+                            : 0;
                     prevTask.setActualMinutesSpent(previousMinutes + durationMinutes);
                     if (!"completed".equals(prevTask.getStatus())) {
                         prevTask.setStatus("pending");
@@ -88,7 +99,9 @@ public class TimeSessionService {
 
     @Transactional
     public SessionResponse stopSession(UUID sessionId, String email) {
-        TimeSession session = sessionRepository.findById(Objects.requireNonNull(sessionId))
+        Objects.requireNonNull(sessionId, "sessionId");
+        Objects.requireNonNull(email, "email");
+        TimeSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Session not found: " + sessionId));
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
@@ -126,6 +139,7 @@ public class TimeSessionService {
 
     @Transactional(readOnly = true)
     public java.util.Optional<SessionResponse> getActiveSession(String email) {
+        Objects.requireNonNull(email, "email");
         User user = userRepository.findByEmail(email).orElse(null);
         if (user == null) {
             return java.util.Optional.empty();

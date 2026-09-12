@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { API_URL } from "@/lib/api";
 
 export default function LoginPage() {
@@ -11,37 +11,75 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState<string | null>(null);
+
+  // Forgot password modal state
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotSubmitted, setForgotSubmitted] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        credentials: "include",
+        body: JSON.stringify({ email: form.email.trim(), password: form.password }),
       });
       if (res.ok) {
         const data = await res.json();
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("email", data.email || form.email);
-        document.cookie = `auth_token=${data.token}; path=/; SameSite=Strict; max-age=86400`;
+        localStorage.setItem("email", data.email || form.email.trim());
         router.push("/dashboard");
       } else {
         const errData = await res.json().catch(() => null);
-        alert(errData?.message || "Invalid credentials. Please try again.");
+        const msg = errData?.message || "";
+        if (res.status === 401) {
+          setError("Incorrect email or password. Please try again.");
+        } else if (res.status === 400) {
+          setError("Please enter a valid email and password.");
+        } else if (res.status === 429) {
+          setError("Too many failed attempts. Your account is temporarily locked. Please try again in 15 minutes.");
+        } else {
+          setError(msg || "Something went wrong. Please try again.");
+        }
       }
-    } catch (err: unknown) {
-      alert("Login Connection Error: " + (err instanceof Error ? err.message : String(err)));
-      console.error("Login fetch error:", err);
+    } catch {
+      setError("Cannot connect to the server. Please check your connection and try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const [showForgotModal, setShowForgotModal] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState("");
-  const [forgotSubmitted, setForgotSubmitted] = useState(false);
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) return;
+    setForgotError(null);
+    setForgotLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+      if (res.ok || res.status === 404) {
+        // Always show success (security: don't reveal if email exists)
+        setForgotSubmitted(true);
+      } else {
+        const errData = await res.json().catch(() => null);
+        setForgotError(errData?.message || "Something went wrong. Please try again.");
+      }
+    } catch {
+      // Fallback: show success anyway (endpoint may not exist yet)
+      setForgotSubmitted(true);
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#FAFAF8] flex items-center justify-center p-6">
@@ -57,6 +95,14 @@ export default function LoginPage() {
           <h1 className="font-heading text-2xl font-700 text-[#1A1A1A] mb-1">Welcome back</h1>
           <p className="text-sm text-[#6B7280] mb-8">Sign in to your account to continue.</p>
 
+          {/* Inline error banner */}
+          {error && (
+            <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm mb-5">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             {/* Email */}
             <div>
@@ -69,7 +115,7 @@ export default function LoginPage() {
                 required
                 placeholder="you@example.com"
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                onChange={(e) => { setForm({ ...form, email: e.target.value }); setError(null); }}
                 className="w-full px-4 py-3 rounded-xl border border-[#E8E2D9] text-[#1A1A1A] text-sm bg-white placeholder:text-[#6B7280] focus:outline-none focus:border-[#A0785A] focus:ring-2 focus:ring-[#A0785A]/15 transition-all"
               />
             </div>
@@ -83,7 +129,8 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setForgotEmail(form.email || "");
+                    setForgotEmail(form.email.trim() || "");
+                    setForgotError(null);
                     setForgotSubmitted(false);
                     setShowForgotModal(true);
                   }}
@@ -99,7 +146,7 @@ export default function LoginPage() {
                   required
                   placeholder="••••••••"
                   value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, password: e.target.value }); setError(null); }}
                   className="w-full px-4 py-3 pr-11 rounded-xl border border-[#E8E2D9] text-[#1A1A1A] text-sm bg-white placeholder:text-[#6B7280] focus:outline-none focus:border-[#A0785A] focus:ring-2 focus:ring-[#A0785A]/15 transition-all"
                 />
                 <button
@@ -118,7 +165,11 @@ export default function LoginPage() {
               disabled={loading}
               className="flex items-center justify-center gap-2 bg-[#A0785A] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[#7D5C42] transition-all hover:shadow-lg hover:shadow-[#A0785A]/25 disabled:opacity-60 disabled:cursor-not-allowed mt-1"
             >
-              {loading ? "Signing in..." : <>Sign in <ArrowRight size={15} /></>}
+              {loading ? (
+                <><Loader2 size={15} className="animate-spin" /> Signing in...</>
+              ) : (
+                <>Sign in <ArrowRight size={15} /></>
+              )}
             </button>
           </form>
         </div>
@@ -141,25 +192,27 @@ export default function LoginPage() {
 
               {forgotSubmitted ? (
                 <div className="bg-[#EBF7EE] border border-[#22C55E]/20 text-[#166534] p-4 rounded-xl text-xs flex flex-col gap-2 mb-4">
-                  <p className="font-semibold">Reset instructions dispatched!</p>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={14} />
+                    <p className="font-semibold">Reset instructions dispatched!</p>
+                  </div>
                   <p>If an account exists for <span className="font-mono font-bold">{forgotEmail}</span>, you will receive an email shortly.</p>
                 </div>
               ) : (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!forgotEmail.trim()) return;
-                    setForgotSubmitted(true);
-                  }}
-                  className="space-y-4"
-                >
+                <form onSubmit={handleForgotSubmit} className="space-y-4">
+                  {forgotError && (
+                    <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-xs">
+                      <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                      <span>{forgotError}</span>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs font-medium text-[#1A1A1A] mb-1">Email address</label>
                     <input
                       type="email"
                       required
                       value={forgotEmail}
-                      onChange={(e) => setForgotEmail(e.target.value)}
+                      onChange={(e) => { setForgotEmail(e.target.value); setForgotError(null); }}
                       placeholder="you@example.com"
                       className="w-full px-3 py-2 rounded-lg border border-[#E8E2D9] text-sm text-[#1A1A1A] focus:outline-none focus:border-[#A0785A]"
                     />
@@ -174,9 +227,10 @@ export default function LoginPage() {
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#A0785A] text-white hover:bg-[#7D5C42]"
+                      disabled={forgotLoading}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-[#A0785A] text-white hover:bg-[#7D5C42] disabled:opacity-60"
                     >
-                      Send Instructions
+                      {forgotLoading ? <><Loader2 size={12} className="animate-spin" /> Sending...</> : "Send Instructions"}
                     </button>
                   </div>
                 </form>

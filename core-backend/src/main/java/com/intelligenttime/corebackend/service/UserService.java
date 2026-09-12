@@ -31,32 +31,34 @@ public class UserService {
 
     @Autowired
     public UserService(UserRepository userRepository,
-                       SubscriptionRepository subscriptionRepository,
-                       JwtService jwtService,
-                       @Autowired(required = false) RateLimiterService rateLimiterService,
-                       @Autowired(required = false) SecurityAuditService securityAuditService) {
+            SubscriptionRepository subscriptionRepository,
+            JwtService jwtService,
+            @Autowired(required = false) RateLimiterService rateLimiterService,
+            @Autowired(required = false) SecurityAuditService securityAuditService) {
         this.userRepository = userRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.jwtService = jwtService;
-        this.rateLimiterService = rateLimiterService != null ? rateLimiterService : new RateLimiterService(null, 5, 60, 900);
+        this.rateLimiterService = rateLimiterService != null ? rateLimiterService
+                : new RateLimiterService(null, 5, 60, 900);
         this.securityAuditService = securityAuditService;
     }
 
     public UserService(UserRepository userRepository,
-                       SubscriptionRepository subscriptionRepository,
-                       JwtService jwtService,
-                       RateLimiterService rateLimiterService) {
+            SubscriptionRepository subscriptionRepository,
+            JwtService jwtService,
+            RateLimiterService rateLimiterService) {
         this(userRepository, subscriptionRepository, jwtService, rateLimiterService, null);
     }
 
     public UserService(UserRepository userRepository,
-                       SubscriptionRepository subscriptionRepository,
-                       JwtService jwtService) {
+            SubscriptionRepository subscriptionRepository,
+            JwtService jwtService) {
         this(userRepository, subscriptionRepository, jwtService, null, null);
     }
 
     @Transactional
     public AuthResponse registerUser(RegisterRequest request) {
+        Objects.requireNonNull(request, "request");
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new BadRequestException("Email is already registered: " + request.getEmail());
         }
@@ -66,14 +68,15 @@ public class UserService {
         if (request.getTimezone() != null) {
             user.setTimezone(request.getTimezone());
         }
-        User savedUser = userRepository.save(user);
+        User savedUser = Objects.requireNonNull(userRepository.save(user));
 
         Subscription subscription = new Subscription();
         subscription.setUser(savedUser);
         subscriptionRepository.save(subscription);
 
         if (securityAuditService != null) {
-            securityAuditService.logEvent(savedUser.getEmail(), "USER_REGISTRATION", DEFAULT_CLIENT_IP, "API", "User registered successfully");
+            securityAuditService.logEvent(savedUser.getEmail(), "USER_REGISTRATION", DEFAULT_CLIENT_IP, "API",
+                    "User registered successfully");
         }
 
         String token = jwtService.generateToken(savedUser.getEmail());
@@ -85,24 +88,37 @@ public class UserService {
     }
 
     public AuthResponse loginUser(LoginRequest request, String clientIp) {
+        Objects.requireNonNull(request, "request");
         String effectiveIp = (clientIp != null && !clientIp.isEmpty()) ? clientIp : DEFAULT_CLIENT_IP;
-        String rateLimitKey = "login:attempt:" + effectiveIp + ":" + request.getEmail();
-        rateLimiterService.checkLimit(rateLimitKey);
+        String ipRateLimitKey = "login:attempt:" + effectiveIp + ":" + request.getEmail();
+        String accountLockoutKey = "login:account:" + request.getEmail();
+
+        // Check both IP-based and account-based rate limits before touching the DB
+        rateLimiterService.checkLimit(ipRateLimitKey);
+        rateLimiterService.checkLimit(accountLockoutKey);
 
         User user = userRepository.findByEmail(request.getEmail()).orElse(null);
 
         if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            rateLimiterService.recordFailure(rateLimitKey);
+            // Record the failure against both the IP+email composite key and the account
+            // key
+            // so that distributed brute-force attacks (many IPs, one account) are also
+            // caught.
+            rateLimiterService.recordFailure(ipRateLimitKey);
+            rateLimiterService.recordFailure(accountLockoutKey);
             if (securityAuditService != null) {
-                securityAuditService.logEvent(request.getEmail(), "LOGIN_FAILURE", effectiveIp, "API", "Invalid credentials provided");
+                securityAuditService.logEvent(request.getEmail(), "LOGIN_FAILURE", effectiveIp, "API",
+                        "Invalid credentials provided");
             }
             throw new BadRequestException("Invalid email or password");
         }
 
-        rateLimiterService.resetLimit(rateLimitKey);
+        rateLimiterService.resetLimit(ipRateLimitKey);
+        rateLimiterService.resetLimit(accountLockoutKey);
 
         if (securityAuditService != null) {
-            securityAuditService.logEvent(user.getEmail(), "LOGIN_SUCCESS", effectiveIp, "API", "Successful authentication");
+            securityAuditService.logEvent(user.getEmail(), "LOGIN_SUCCESS", effectiveIp, "API",
+                    "Successful authentication");
         }
 
         String token = jwtService.generateToken(user.getEmail());
@@ -110,6 +126,7 @@ public class UserService {
     }
 
     public UserProfileResponse getUserProfile(String email) {
+        Objects.requireNonNull(email, "email");
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
         Subscription subscription = subscriptionRepository.findByUser(user)
@@ -122,7 +139,9 @@ public class UserService {
     }
 
     @Transactional
+    @SuppressWarnings("null")
     public UserProfileResponse updateSleepPreferences(String email, String sleepStartTime, String sleepEndTime) {
+        Objects.requireNonNull(email, "email");
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
         if (sleepStartTime != null && !sleepStartTime.isBlank()) {
@@ -131,7 +150,7 @@ public class UserService {
         if (sleepEndTime != null && !sleepEndTime.isBlank()) {
             user.setSleepEndTime(sleepEndTime);
         }
-        User saved = userRepository.save(Objects.requireNonNull(user));
+        User saved = Objects.requireNonNull(userRepository.save(user));
         Subscription subscription = subscriptionRepository.findByUser(saved).orElse(null);
         String plan = subscription != null ? subscription.getPlan() : "free";
         String status = subscription != null ? subscription.getStatus() : "inactive";

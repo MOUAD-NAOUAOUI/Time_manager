@@ -4,15 +4,21 @@ import com.intelligenttime.corebackend.exception.TooManyRequestsException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
+/**
+ * Redis-backed rate limiter for brute-force protection.
+ *
+ * Fail-secure design: if Redis is unavailable, all operations throw
+ * ServiceUnavailableException rather than silently bypassing limits.
+ * This prevents attackers from triggering Redis failures to circumvent
+ * rate limiting.
+ */
 @Service
 public class RateLimiterService {
 
@@ -24,105 +30,93 @@ public class RateLimiterService {
     private final long windowSeconds;
     private final long lockoutSeconds;
 
-    // In-memory fallback if Redis is unavailable or during tests
-    private final ConcurrentHashMap<String, AttemptRecord> fallbackCache = new ConcurrentHashMap<>();
-
     public RateLimiterService(
-            @Autowired(required = false) StringRedisTemplate redisTemplate,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) StringRedisTemplate redisTemplate,
             @Value("${rate.limit.max-attempts:5}") int maxAttempts,
             @Value("${rate.limit.window-seconds:60}") long windowSeconds,
             @Value("${rate.limit.lockout-seconds:900}") long lockoutSeconds) {
-        this.redisTemplate = redisTemplate;
+        this.redisTemplate = Objects.requireNonNull(redisTemplate,
+                "Redis is required for rate limiting. Ensure Redis is configured and reachable.");
         this.maxAttempts = maxAttempts;
         this.windowSeconds = windowSeconds;
         this.lockoutSeconds = lockoutSeconds;
+        LOGGER.info("RateLimiterService initialized: maxAttempts={}, window={}s, lockout={}s",
+                maxAttempts, windowSeconds, lockoutSeconds);
     }
 
+    /**
+     * Throws {@link TooManyRequestsException} if the key is currently locked out.
+     * Throws {@link IllegalStateException} if Redis is unreachable (fail-secure).
+     */
     public void checkLimit(String key) {
         long remainingLockout = getRemainingLockout(key);
         if (remainingLockout > 0) {
             throw new TooManyRequestsException(
-                    "Too many failed attempts. Account temporarily locked. Please try again in " + remainingLockout
-                            + " seconds.",
+                    "Too many failed attempts. Please try again in " + remainingLockout + " seconds.",
                     remainingLockout);
         }
     }
 
+    /**
+     * Records a failed attempt for the given key.
+     * Throws {@link IllegalStateException} if Redis is unreachable (fail-secure).
+     */
     public void recordFailure(String key) {
         String safeKey = Objects.requireNonNull(key, "key");
         try {
-            if (redisTemplate != null) {
-                Long attempts = redisTemplate.opsForValue().increment(safeKey);
-                if (attempts != null && attempts == 1) {
-                    redisTemplate.expire(safeKey, windowSeconds, TimeUnit.SECONDS);
-                } else if (attempts != null && attempts >= maxAttempts) {
-                    redisTemplate.expire(safeKey, lockoutSeconds, TimeUnit.SECONDS);
-                }
-                return;
+            Long attempts = redisTemplate.opsForValue().increment(safeKey);
+            if (attempts != null && attempts == 1) {
+                redisTemplate.expire(safeKey, windowSeconds, TimeUnit.SECONDS);
+            } else if (attempts != null && attempts >= maxAttempts) {
+                redisTemplate.expire(safeKey, lockoutSeconds, TimeUnit.SECONDS);
             }
         } catch (Exception e) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Redis operation failed for recordFailure, falling back to in-memory: {}", e.getMessage());
-            }
+            LOGGER.error("Redis unavailable during recordFailure for key prefix '{}': {}",
+                    sanitizeKeyForLog(safeKey), e.getMessage());
+            throw new IllegalStateException(
+                    "Rate limiting service unavailable. Request denied to preserve security.", e);
         }
-
-        // In-memory fallback
-        long now = System.currentTimeMillis();
-        fallbackCache.compute(safeKey, (k, record) -> {
-            if (record == null || now > record.expiryTime) {
-                return new AttemptRecord(1, now + (windowSeconds * 1000));
-            }
-            record.count++;
-            if (record.count >= maxAttempts) {
-                record.expiryTime = now + (lockoutSeconds * 1000);
-            }
-            return record;
-        });
     }
 
+    /**
+     * Clears the failure count for the given key on successful authentication.
+     * Throws {@link IllegalStateException} if Redis is unreachable (fail-secure).
+     */
     public void resetLimit(String key) {
         String safeKey = Objects.requireNonNull(key, "key");
         try {
-            if (redisTemplate != null) {
-                redisTemplate.delete(safeKey);
-            }
+            redisTemplate.delete(safeKey);
         } catch (Exception e) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Redis operation failed for resetLimit: {}", e.getMessage());
-            }
+            LOGGER.error("Redis unavailable during resetLimit for key prefix '{}': {}",
+                    sanitizeKeyForLog(safeKey), e.getMessage());
+            throw new IllegalStateException(
+                    "Rate limiting service unavailable. Request denied to preserve security.", e);
         }
-        fallbackCache.remove(safeKey);
     }
 
+    /**
+     * Returns the number of seconds remaining in the lockout period, or 0 if
+     * the key is not locked out.
+     * Throws {@link IllegalStateException} if Redis is unreachable (fail-secure).
+     */
     public long getRemainingLockout(String key) {
         String safeKey = Objects.requireNonNull(key, "key");
         try {
-            if (redisTemplate != null) {
-                String val = redisTemplate.opsForValue().get(safeKey);
-                if (val != null) {
-                    int count = Integer.parseInt(val);
-                    if (count >= maxAttempts) {
-                        Long expire = redisTemplate.getExpire(safeKey, TimeUnit.SECONDS);
-                        return (expire != null && expire > 0) ? expire : 0;
-                    }
+            String val = redisTemplate.opsForValue().get(safeKey);
+            if (val != null) {
+                int count = Integer.parseInt(val);
+                if (count >= maxAttempts) {
+                    Long expire = redisTemplate.getExpire(safeKey, TimeUnit.SECONDS);
+                    return (expire != null && expire > 0) ? expire : 0;
                 }
-                return 0;
             }
+            return 0;
         } catch (Exception e) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Redis operation failed for getRemainingLockout, falling back to in-memory: {}",
-                        e.getMessage());
-            }
+            LOGGER.error("Redis unavailable during getRemainingLockout for key prefix '{}': {}",
+                    sanitizeKeyForLog(safeKey), e.getMessage());
+            throw new IllegalStateException(
+                    "Rate limiting service unavailable. Request denied to preserve security.", e);
         }
-
-        AttemptRecord record = fallbackCache.get(safeKey);
-        if (record != null) {
-            long now = System.currentTimeMillis();
-            if (now < record.expiryTime && record.count >= maxAttempts) {
-                return (record.expiryTime - now) / 1000;
-            }
-        }
-        return 0;
     }
 
     public String extractClientIp(HttpServletRequest request) {
@@ -140,13 +134,12 @@ public class RateLimiterService {
         return request.getRemoteAddr() != null ? request.getRemoteAddr() : DEFAULT_CLIENT_IP;
     }
 
-    private static class AttemptRecord {
-        int count;
-        long expiryTime;
-
-        AttemptRecord(int count, long expiryTime) {
-            this.count = count;
-            this.expiryTime = expiryTime;
-        }
+    /**
+     * Strips the actual IP/email from the key before logging to avoid PII in logs.
+     */
+    private static String sanitizeKeyForLog(String key) {
+        // Keys are in the form "login:attempt:{ip}:{email}" — log only the prefix
+        int idx = key.indexOf(':');
+        return idx > 0 ? key.substring(0, idx) + ":..." : "...";
     }
 }

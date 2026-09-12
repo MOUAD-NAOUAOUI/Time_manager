@@ -58,7 +58,7 @@ public class AIController {
             @Valid @RequestBody ChatProcessRequest request,
             @RequestParam(required = false) UUID sessionId,
             Authentication authentication) {
-        String userEmail = getAuthenticatedEmail(authentication);
+        String userEmail = resolveEmail(authentication, request.getUserEmail());
 
         // Get or create persistent conversation session
         ChatSession session = chatPersistenceService.getOrCreateSession(userEmail, sessionId);
@@ -85,7 +85,7 @@ public class AIController {
     public ResponseEntity<List<TaskResponse>> confirmProposal(
             @Valid @RequestBody ConfirmProposalRequest request,
             Authentication authentication) {
-        String userEmail = getAuthenticatedEmail(authentication);
+        String userEmail = resolveEmail(authentication, request.getUserEmail());
         List<TaskResponse> savedTasks = aiClientService.confirmAndSaveTasks(
                 userEmail, request.getTasks());
         return ResponseEntity.ok(savedTasks);

@@ -40,6 +40,7 @@ public class TaskService {
 
     @Transactional
     public TaskResponse createTask(CreateTaskRequest request) {
+        Objects.requireNonNull(request, "request");
         User user = findUserByEmail(request.getUserEmail());
         Task task = new Task();
         task.setUser(user);
@@ -62,6 +63,7 @@ public class TaskService {
     }
 
     public List<TaskResponse> getUserTasks(String email) {
+        Objects.requireNonNull(email, "email");
         User user = findUserByEmail(email);
         return taskRepository.findByUserId(user.getId())
                 .stream()
@@ -71,7 +73,10 @@ public class TaskService {
 
     @Transactional
     public TaskResponse updateStatus(UUID taskId, String email, UpdateTaskStatusRequest request) {
-        Task task = taskRepository.findById(Objects.requireNonNull(taskId))
+        Objects.requireNonNull(taskId, "taskId");
+        Objects.requireNonNull(email, "email");
+        Objects.requireNonNull(request, "request");
+        Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
 
         User user = findUserByEmail(email);
@@ -105,7 +110,10 @@ public class TaskService {
 
     @Transactional
     public TaskResponse updateTask(UUID taskId, String email, CreateTaskRequest request) {
-        Task task = taskRepository.findById(Objects.requireNonNull(taskId))
+        Objects.requireNonNull(taskId, "taskId");
+        Objects.requireNonNull(email, "email");
+        Objects.requireNonNull(request, "request");
+        Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
 
         User user = findUserByEmail(email);
@@ -143,7 +151,9 @@ public class TaskService {
 
     @Transactional
     public void deleteTask(UUID taskId, String email) {
-        Task task = taskRepository.findById(Objects.requireNonNull(taskId))
+        Objects.requireNonNull(taskId, "taskId");
+        Objects.requireNonNull(email, "email");
+        Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + taskId));
         User user = findUserByEmail(email);
         if (!task.getUser().getId().equals(user.getId())) {

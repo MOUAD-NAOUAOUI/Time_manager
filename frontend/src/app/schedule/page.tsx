@@ -228,8 +228,9 @@ function SleepConfigModal({
 }
 
 const formatHour = (hour: number): string => {
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const h = hour % 12 === 0 ? 12 : hour % 12;
+  const norm = hour % 24;
+  const ampm = (norm >= 12 && norm < 24) ? "PM" : "AM";
+  const h = norm % 12 === 0 ? 12 : norm % 12;
   return `${h} ${ampm}`;
 };
 
@@ -303,7 +304,19 @@ export default function SchedulePage() {
     setError("");
     try {
       const email = getUserEmail();
-      const res = await fetchWithAuth(`${API_URL}/schedule/date?email=${encodeURIComponent(email)}&date=${today}`);
+      const [res, tasksRes] = await Promise.all([
+        fetchWithAuth(`${API_URL}/schedule/date?email=${encodeURIComponent(email)}&date=${today}`),
+        fetchWithAuth(`${API_URL}/tasks?email=${encodeURIComponent(email)}`),
+      ]);
+
+      if (tasksRes.ok) {
+        const tasksData = await tasksRes.json();
+        if (Array.isArray(tasksData)) {
+          const completed = tasksData.filter((t: any) => t.status === "completed").map((t: any) => t.id);
+          setCompletedTaskIds(new Set(completed));
+        }
+      }
+
       if (!res.ok) throw new Error("no_schedule");
       const data = await res.json();
       setSchedule({

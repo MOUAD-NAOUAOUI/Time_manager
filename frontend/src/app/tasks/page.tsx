@@ -328,23 +328,27 @@ export default function TasksPage() {
         filterStatus === "all"
           ? true
           : filterStatus === "pending"
-          ? t.status === "pending"
-          : filterStatus === "in_progress"
-          ? t.status === "in_progress" || activeSession === t.id
-          : t.status === "completed";
+            ? t.status === "pending"
+            : filterStatus === "in_progress"
+              ? t.status === "in_progress" || activeSession === t.id
+              : t.status === "completed";
       return matchesSearch && matchesStatus;
     });
   }, [tasks, searchTerm, filterStatus, activeSession]);
 
   const fetchTasks = () => {
-    fetchWithAuth(`${API_URL}/tasks`)
+    const email = getUserEmail();
+    const query = email ? `?email=${encodeURIComponent(email)}` : "";
+    fetchWithAuth(`${API_URL}/tasks${query}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => Array.isArray(d) && setTasks(d))
       .catch(() => { });
   };
 
   const fetchActiveSession = () => {
-    fetchWithAuth(`${API_URL}/sessions/active`)
+    const email = getUserEmail();
+    const query = email ? `?email=${encodeURIComponent(email)}` : "";
+    fetchWithAuth(`${API_URL}/sessions/active${query}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((active) => {
         if (active && active.id && active.status === "running") {
@@ -376,23 +380,21 @@ export default function TasksPage() {
         if (saved) {
           const parsed: Record<string, any[]> = JSON.parse(saved);
           const now = new Date();
-          const currentDayKey = formatLocalDate(now);
-          const nowMinutes = now.getHours() * 60 + now.getMinutes();
+          const currentWeekStart = new Date(now);
+          currentWeekStart.setHours(0, 0, 0, 0);
+          currentWeekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7)); // Monday of current week
+          const currentWeekStartKey = formatLocalDate(currentWeekStart);
           let changed = false;
 
           const cleaned: Record<string, any[]> = {};
           for (const [dKey, items] of Object.entries(parsed)) {
-            if (dKey < currentDayKey) {
+            if (dKey < currentWeekStartKey) {
+              // Prior weeks: retain only completed items
               const remaining = items.filter((it) => it.status === "completed");
               if (remaining.length !== items.length) changed = true;
               if (remaining.length > 0) cleaned[dKey] = remaining;
-            } else if (dKey === currentDayKey) {
-              const remaining = items.filter(
-                (it) => it.status === "completed" || ((it.startHour * 60 + (it.startMinute || 0)) >= nowMinutes)
-              );
-              if (remaining.length !== items.length) changed = true;
-              cleaned[dKey] = remaining;
             } else {
+              // Current week & future weeks: preserve all scheduled items across all 7 days!
               cleaned[dKey] = items;
             }
           }
@@ -466,7 +468,7 @@ export default function TasksPage() {
     if (!timeUpTask) return;
     const taskToFinish = timeUpTask;
     setShowTimeUpModal(false);
-    
+
     // 1. Optimistically update local UI state to completed
     setTasks((prev) =>
       prev.map((t) => (t.id === taskToFinish.id ? { ...t, status: "completed" } : t))
@@ -475,17 +477,24 @@ export default function TasksPage() {
     try {
       const email = getUserEmail();
       // 2. Persist completed status to backend
-      await fetchWithAuth(`${API_URL}/tasks/${taskToFinish.id}/status?email=${encodeURIComponent(email)}`, {
+      const statusResponse = await fetchWithAuth(`${API_URL}/tasks/${taskToFinish.id}/status?email=${encodeURIComponent(email)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "completed" }),
       });
+      if (!statusResponse.ok) {
+        throw new Error("Could not complete task");
+      }
       // 3. Stop running session (records actual minutes)
       await stopSession(true);
       // 4. Fetch latest data from backend
       fetchTasks();
     } catch (e) {
       console.error("Error completing task:", e);
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskToFinish.id ? { ...t, status: "in_progress" } : t))
+      );
+      alert("Could not finish the task. Your changes were not saved.");
     }
   };
 
@@ -514,9 +523,11 @@ export default function TasksPage() {
       } else {
         const err = await res.text();
         console.error("Failed to start session:", err);
+        alert("Could not start the timer. Please try again.");
       }
     } catch (e) {
       console.error("Error starting session:", e);
+      alert("Could not reach the backend. Please check that it is running.");
     }
   };
 
@@ -535,25 +546,33 @@ export default function TasksPage() {
         }
       }
     }
+    let stopped = false;
     try {
+      const email = getUserEmail();
+      const emailParam = email ? `?email=${encodeURIComponent(email)}` : "";
       if (sessionId) {
-        await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop`, { method: "PUT" });
+        const response = await fetchWithAuth(`${API_URL}/sessions/${sessionId}/stop${emailParam}`, { method: "PUT" });
+        stopped = response.ok;
       } else {
-        const res = await fetchWithAuth(`${API_URL}/sessions/active`);
+        const res = await fetchWithAuth(`${API_URL}/sessions/active${emailParam}`);
         if (res.ok) {
           const active = await res.json();
           if (active?.id) {
-            await fetchWithAuth(`${API_URL}/sessions/${active.id}/stop`, { method: "PUT" });
+            const response = await fetchWithAuth(`${API_URL}/sessions/${active.id}/stop${emailParam}`, { method: "PUT" });
+            stopped = response.ok;
           }
         }
       }
     } catch (e) {
       console.error("Failed to stop session:", e);
-    } finally {
+    }
+    if (stopped) {
       setActiveSession(null);
       setSessionId(null);
       setElapsed(0);
       fetchTasks();
+    } else {
+      alert("Could not stop the timer. It is still running on the server.");
     }
   };
 
@@ -622,8 +641,7 @@ export default function TasksPage() {
     e.preventDefault();
     if (slotEvaluation.hasConflict) {
       alert(
-        `⚠️ Cannot schedule: The selected time slot (${slotEvaluation.formattedRange}) is occupied on: ${
-          slotEvaluation.conflictedDayLabels || "selected day(s)"
+        `⚠️ Cannot schedule: The selected time slot (${slotEvaluation.formattedRange}) is occupied on: ${slotEvaluation.conflictedDayLabels || "selected day(s)"
         }.\n\nPlease choose an available time slot or click 'Apply Suggested Time'.`
       );
       return;
@@ -634,14 +652,22 @@ export default function TasksPage() {
       const today = new Date();
       const endH = Math.floor(slotEvaluation.endMinutes / 60);
       const endM = slotEvaluation.endMinutes % 60;
-      const deadlineDate = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate(),
-        endH,
-        endM,
-        0
+      const isRecurring = selectedDays.length > 0;
+      const targetRawDays = isRecurring ? selectedDays : [formatLocalDate(today)];
+
+      // Apply rule:
+      // 1. Current week: skip past days; if today's hour has passed, start from tomorrow.
+      // 2. Next week: schedule all selected days starting from the beginning (Monday..Sunday) if recurring!
+      const { allDates } = getValidScheduleDates(
+        targetRawDays,
+        slotEvaluation.startMinutes,
+        today,
+        isRecurring
       );
+
+      const lastDateKey = allDates.length > 0 ? allDates[allDates.length - 1] : formatLocalDate(today);
+      const [ly, lm, ld] = lastDateKey.split("-").map(Number);
+      const deadlineDate = new Date(ly, lm - 1, ld, endH, endM, 0);
       const deadlineIso = deadlineDate.toISOString();
 
       const res = await fetchWithAuth(`${API_URL}/tasks`, {
@@ -663,20 +689,13 @@ export default function TasksPage() {
           try {
             const key = `timespace_manual_schedule_${email}`;
             const current = JSON.parse(localStorage.getItem(key) || "{}");
-            const targetRawDays = selectedDays.length > 0 ? selectedDays : [formatLocalDate(today)];
-            // Apply rule:
-            // 1. Current week: skip past days; if today's hour has passed, start from tomorrow.
-            // 2. Next week: schedule all selected days starting from the beginning (Monday..Sunday)!
-            const { allDates } = getValidScheduleDates(
-              targetRawDays,
-              slotEvaluation.startMinutes,
-              today,
-              true
-            );
             const baseId = createdTask?.id || `manual_${Date.now()}`;
 
             for (const dKey of allDates) {
               const dayList = current[dKey] || [];
+              const [dy, dm, dd] = dKey.split("-").map(Number);
+              const dayDeadlineIso = new Date(dy, dm - 1, dd, endH, endM, 0).toISOString();
+
               const newItem = {
                 id: `${baseId}_${dKey}`,
                 taskId: createdTask?.id,
@@ -686,7 +705,7 @@ export default function TasksPage() {
                 startMinute: slotEvaluation.startMinutes % 60,
                 status: "pending",
                 color: manualForm.color,
-                deadline: deadlineIso,
+                deadline: dayDeadlineIso,
               };
               const filtered = dayList.filter(
                 (it: any) =>
@@ -705,9 +724,13 @@ export default function TasksPage() {
         setSelectedDays([]);
         setShowManualForm(false);
         fetchTasks();
+      } else {
+        const error = await res.json().catch(() => null);
+        alert(error?.message || "Could not save the task. Please try again.");
       }
-    } catch {
-      /* offline */
+    } catch (error) {
+      console.error("Error creating task:", error);
+      alert("Could not reach the backend. Please check that it is running.");
     }
     setLoading(false);
   };
@@ -723,6 +746,9 @@ export default function TasksPage() {
       });
       if (res.ok) {
         setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: nextStatus } : t));
+      } else {
+        const error = await res.json().catch(() => null);
+        alert(error?.message || "Could not update the task status.");
       }
     } catch (err) {
       console.error("Error toggling task status:", err);
@@ -739,6 +765,30 @@ export default function TasksPage() {
       if (res.ok) {
         setTasks((previous) => previous.filter((current) => current.id !== task.id));
         setTaskPendingDeletion(null);
+
+        // Clean up from manual scheduled items in localStorage
+        if (email && typeof window !== "undefined") {
+          try {
+            const key = `timespace_manual_schedule_${email}`;
+            const current = JSON.parse(localStorage.getItem(key) || "{}");
+            let changed = false;
+            for (const dKey of Object.keys(current)) {
+              const prevLen = current[dKey]?.length || 0;
+              current[dKey] = (current[dKey] || []).filter(
+                (it: any) => it.taskId !== task.id && it.id !== task.id && !it.id.startsWith(task.id)
+              );
+              if (current[dKey].length !== prevLen) changed = true;
+            }
+            if (changed) {
+              localStorage.setItem(key, JSON.stringify(current));
+            }
+          } catch { /* ignore */ }
+        }
+
+        // If active session was on this task, stop it locally
+        if (activeSession === task.id) {
+          stopSession(true);
+        }
       } else {
         alert("The task could not be deleted. Please try again.");
       }
@@ -785,14 +835,14 @@ export default function TasksPage() {
           prev.map((t) =>
             t.id === editingTask.id
               ? {
-                  ...t,
-                  title: editForm.title,
-                  estimatedMinutes: Number(editForm.estimatedMinutes),
-                  color: editForm.color,
-                  priority: editForm.priority,
-                  recurrence: editForm.recurrence,
-                  ...(updated || {}),
-                }
+                ...t,
+                title: editForm.title,
+                estimatedMinutes: Number(editForm.estimatedMinutes),
+                color: editForm.color,
+                priority: editForm.priority,
+                recurrence: editForm.recurrence,
+                ...(updated || {}),
+              }
               : t
           )
         );
@@ -822,6 +872,26 @@ export default function TasksPage() {
     }
   }, [showAiModal]);
 
+  // Load chat session history when user selects an existing conversation
+  useEffect(() => {
+    if (!selectedSessionId) {
+      setAiReply(null);
+      setProposal(null);
+      return;
+    }
+    fetchWithAuth(`${API_URL}/ai/chat/sessions/${selectedSessionId}/messages`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((msgs) => {
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          const lastAssistant = msgs.slice().reverse().find((m: any) => m.role === "assistant");
+          if (lastAssistant) {
+            setAiReply(lastAssistant.content);
+          }
+        }
+      })
+      .catch(() => { });
+  }, [selectedSessionId]);
+
   // 2. Handle AI Prompt Submission
   const handleAiSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -835,9 +905,10 @@ export default function TasksPage() {
       : `${API_URL}/ai/chat`;
 
     try {
+      const email = getUserEmail();
       const res = await fetchWithAuth(url, {
         method: "POST",
-        body: JSON.stringify({ message: aiPrompt }),
+        body: JSON.stringify({ message: aiPrompt, userEmail: email }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -859,9 +930,10 @@ export default function TasksPage() {
     if (!proposal || !proposal.extracted_tasks) return;
     setConfirming(true);
     try {
+      const email = getUserEmail();
       const res = await fetchWithAuth(`${API_URL}/ai/chat/confirm`, {
         method: "POST",
-        body: JSON.stringify({ tasks: proposal.extracted_tasks }),
+        body: JSON.stringify({ tasks: proposal.extracted_tasks, userEmail: email }),
       });
       if (res.ok) {
         setShowAiModal(false);
@@ -1036,11 +1108,10 @@ export default function TasksPage() {
                       <CalendarDays size={14} className="text-[#A0785A]" />
                       Repeat on Days of the Week:
                       <span
-                        className={`font-semibold px-2 py-0.5 rounded-full text-[11px] ${
-                          selectedDays.length > 0
-                            ? "bg-[#A0785A] text-white"
-                            : "bg-[#E8E2D9]/70 text-[#6B7280]"
-                        }`}
+                        className={`font-semibold px-2 py-0.5 rounded-full text-[11px] ${selectedDays.length > 0
+                          ? "bg-[#A0785A] text-white"
+                          : "bg-[#E8E2D9]/70 text-[#6B7280]"
+                          }`}
                       >
                         {selectedDays.length > 0
                           ? `${selectedDays.length} of 7 days selected`
@@ -1062,23 +1133,21 @@ export default function TasksPage() {
                       <button
                         type="button"
                         onClick={() => handleSelectDayPreset("weekdays")}
-                        className={`text-[10px] px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
-                          selectedDays.length === 5 &&
+                        className={`text-[10px] px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${selectedDays.length === 5 &&
                           weekDays.slice(0, 5).every((d) => selectedDays.includes(d.dateKey))
-                            ? "bg-[#A0785A] text-white shadow-xs"
-                            : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
-                        }`}
+                          ? "bg-[#A0785A] text-white shadow-xs"
+                          : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
+                          }`}
                       >
                         Mon–Fri
                       </button>
                       <button
                         type="button"
                         onClick={() => handleSelectDayPreset("all")}
-                        className={`text-[10px] px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
-                          selectedDays.length === 7
-                            ? "bg-[#A0785A] text-white shadow-xs"
-                            : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
-                        }`}
+                        className={`text-[10px] px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${selectedDays.length === 7
+                          ? "bg-[#A0785A] text-white shadow-xs"
+                          : "bg-white border border-[#E8E2D9] text-[#6B7280] hover:text-[#A0785A] hover:border-[#A0785A]"
+                          }`}
                       >
                         All 7 days
                       </button>
@@ -1102,20 +1171,18 @@ export default function TasksPage() {
                           key={wd.dateKey}
                           type="button"
                           onClick={() => handleToggleDay(wd.dateKey)}
-                          title={`${wd.dayShort} ${wd.dayNum} · ${
-                            manualForm.startTime
-                              ? isPastSlot
-                                ? "Past this week · Starts next week from beginning"
-                                : isOccupied
+                          title={`${wd.dayShort} ${wd.dayNum} · ${manualForm.startTime
+                            ? isPastSlot
+                              ? "Past this week · Starts next week from beginning"
+                              : isOccupied
                                 ? "Slot occupied at this time"
                                 : "Slot free"
-                              : "Click to toggle selection"
-                          }`}
-                          className={`flex flex-col items-center justify-center py-2.5 px-1 rounded-xl border text-xs transition-all cursor-pointer select-none relative ${
-                            isSelected
-                              ? "bg-[#A0785A] text-white border-[#A0785A] shadow-xs ring-1 ring-[#A0785A]"
-                              : "bg-white text-[#4B5563] border-[#E8E2D9] hover:border-[#A0785A]/50 hover:bg-[#FDFBF9]"
-                          }`}
+                            : "Click to toggle selection"
+                            }`}
+                          className={`flex flex-col items-center justify-center py-2.5 px-1 rounded-xl border text-xs transition-all cursor-pointer select-none relative ${isSelected
+                            ? "bg-[#A0785A] text-white border-[#A0785A] shadow-xs ring-1 ring-[#A0785A]"
+                            : "bg-white text-[#4B5563] border-[#E8E2D9] hover:border-[#A0785A]/50 hover:bg-[#FDFBF9]"
+                            }`}
                         >
                           {isSelected && (
                             <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-white text-[#A0785A] flex items-center justify-center shadow-xs">
@@ -1123,16 +1190,14 @@ export default function TasksPage() {
                             </div>
                           )}
                           <span
-                            className={`text-[10px] font-bold uppercase tracking-wider ${
-                              isSelected ? "text-white" : "text-[#6B7280]"
-                            }`}
+                            className={`text-[10px] font-bold uppercase tracking-wider ${isSelected ? "text-white" : "text-[#6B7280]"
+                              }`}
                           >
                             {wd.dayShort}
                           </span>
                           <span
-                            className={`text-sm font-extrabold mt-0.5 ${
-                              isSelected ? "text-white" : "text-[#1A1A1A]"
-                            }`}
+                            className={`text-sm font-extrabold mt-0.5 ${isSelected ? "text-white" : "text-[#1A1A1A]"
+                              }`}
                           >
                             {wd.dayNum}
                           </span>
@@ -1141,19 +1206,18 @@ export default function TasksPage() {
                           {manualForm.startTime && (
                             <div className="flex items-center gap-1 mt-1">
                               <span
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                  isPastSlot
-                                    ? isSelected
-                                      ? "bg-amber-200"
-                                      : "bg-slate-300"
-                                    : isOccupied
+                                className={`w-1.5 h-1.5 rounded-full ${isPastSlot
+                                  ? isSelected
+                                    ? "bg-amber-200"
+                                    : "bg-slate-300"
+                                  : isOccupied
                                     ? isSelected
                                       ? "bg-amber-300"
                                       : "bg-red-500"
                                     : isSelected
-                                    ? "bg-emerald-300"
-                                    : "bg-emerald-500"
-                                }`}
+                                      ? "bg-emerald-300"
+                                      : "bg-emerald-500"
+                                  }`}
                               />
                             </div>
                           )}
@@ -1611,17 +1675,15 @@ export default function TasksPage() {
                     key={tab.key}
                     type="button"
                     onClick={() => setFilterStatus(tab.key)}
-                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                      filterStatus === tab.key
-                        ? "bg-[#A0785A] text-white shadow-xs font-semibold"
-                        : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${filterStatus === tab.key
+                      ? "bg-[#A0785A] text-white shadow-xs font-semibold"
+                      : "text-[#6B7280] hover:bg-[#FAFAF8] hover:text-[#1A1A1A]"
+                      }`}
                   >
                     <span>{tab.label}</span>
                     <span
-                      className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                        filterStatus === tab.key ? "bg-white/20 text-white" : "bg-[#E8E2D9]/60 text-[#6B7280]"
-                      }`}
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full ${filterStatus === tab.key ? "bg-white/20 text-white" : "bg-[#E8E2D9]/60 text-[#6B7280]"
+                        }`}
                     >
                       {tab.count}
                     </span>
@@ -1678,11 +1740,10 @@ export default function TasksPage() {
                 return (
                   <div
                     key={task.id}
-                    className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition-all ${
-                      isActive
-                        ? "border-[#A0785A] bg-[#F5EFE8]/30 shadow-sm"
-                        : "border-[#E8E2D9] hover:border-[#A0785A]/30 hover:shadow-sm"
-                    }`}
+                    className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition-all ${isActive
+                      ? "border-[#A0785A] bg-[#F5EFE8]/30 shadow-sm"
+                      : "border-[#E8E2D9] hover:border-[#A0785A]/30 hover:shadow-sm"
+                      }`}
                   >
                     <div
                       className={`w-1 h-10 rounded-full shrink-0 ${isActive ? "animate-pulse ring-2 ring-[#A0785A]/40" : ""}`}
@@ -1708,25 +1769,23 @@ export default function TasksPage() {
                       </p>
                       <div className="flex items-center gap-3 mt-0.5">
                         <span
-                          className={`text-xs flex items-center gap-1 font-medium ${
-                            timeInfo.isOvertime
-                              ? "text-[#DC2626]"
-                              : timeInfo.isLive
+                          className={`text-xs flex items-center gap-1 font-medium ${timeInfo.isOvertime
+                            ? "text-[#DC2626]"
+                            : timeInfo.isLive
                               ? "text-[#A0785A]"
                               : "text-[#6B7280]"
-                          }`}
+                            }`}
                         >
                           <Clock size={11} className={timeInfo.isLive ? "text-[#A0785A] animate-pulse" : ""} />
                           {timeInfo.label}
                         </span>
                         <span
-                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            task.status === "completed"
-                              ? "bg-green-50 text-[#16A34A]"
-                              : isActive
+                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${task.status === "completed"
+                            ? "bg-green-50 text-[#16A34A]"
+                            : isActive
                               ? "bg-[#F5EFE8] text-[#A0785A]"
                               : "bg-gray-100 text-gray-600"
-                          }`}
+                            }`}
                         >
                           {isActive ? "In Progress (Live)" : task.status === "completed" ? "Completed" : "Pending"}
                         </span>

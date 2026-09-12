@@ -94,11 +94,17 @@ export function isSlotOverdue(date: Date, hour: number, deadline?: string, now: 
     return true;
   }
 
-  // Check deadline
+  // If slot is in the future, it is an upcoming slot.
+  // A deadline can only mark a slot overdue if the deadline date matches this cell's date
+  // and the deadline time on that date has already passed.
   if (deadline) {
     const deadlineTime = new Date(deadline);
-    if (!isNaN(deadlineTime.getTime()) && deadlineTime.getTime() < now.getTime()) {
-      return true;
+    if (!isNaN(deadlineTime.getTime())) {
+      const cellDateStr = formatLocalDate(date);
+      const deadlineDateStr = formatLocalDate(deadlineTime);
+      if (deadlineDateStr === cellDateStr && deadlineTime.getTime() < now.getTime()) {
+        return true;
+      }
     }
   }
 
@@ -109,12 +115,15 @@ export function isSlotOverdue(date: Date, hour: number, deadline?: string, now: 
  * Calculates the valid scheduling target dates for a task based on the current date/time.
  * Rule:
  * 1. For the current week:
- *    - Days before today are skipped (cannot schedule in the past of the current week).
- *    - Today is only included if the slot hasn't already passed (startMinutes >= nowMinutes).
- *      If today's slot has already passed, we start from tomorrow or next day!
- *    - Future days of the current week are included.
- * 2. For the next week:
- *    - All selected days are scheduled starting from the beginning of next week (Monday..Sunday).
+ *    - RECURRING tasks (multiple days selected): ALL selected days are written to the current
+ *      week grid, including past days. The user explicitly chose those days for their weekly
+ *      schedule — the grid should show them. (Past-day sessions simply won't auto-start.)
+ *    - ONE-OFF tasks (single day selected):
+ *        - Days before today are skipped.
+ *        - Today is only included if the slot hasn't already passed (startMinutes >= nowMinutes).
+ *        - If today's slot has already passed, fallback to tomorrow.
+ * 2. For the next week (when includeNextWeek = true):
+ *    - All selected days are scheduled starting from the beginning of next week (Mon → Sun).
  */
 export function getValidScheduleDates(
   selectedDateKeys: string[],
@@ -124,23 +133,31 @@ export function getValidScheduleDates(
 ): { currentWeekDates: string[]; nextWeekDates: string[]; allDates: string[] } {
   const currentDayKey = formatLocalDate(now);
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const isRecurring = selectedDateKeys.length > 1;
 
   const currentWeekDates: string[] = [];
   const nextWeekDates: string[] = [];
 
   for (const dKey of selectedDateKeys) {
     // 1. Current week evaluation
-    if (dKey > currentDayKey) {
+    if (isRecurring) {
+      // For recurring tasks: always include ALL selected days in the current week grid.
+      // The user chose these days — show them on the dashboard regardless of time-of-day.
       currentWeekDates.push(dKey);
-    } else if (dKey === currentDayKey) {
-      if (startMinutes >= nowMinutes) {
+    } else {
+      // One-off task: respect the "don't schedule in the past" rule
+      if (dKey > currentDayKey) {
         currentWeekDates.push(dKey);
+      } else if (dKey === currentDayKey) {
+        if (startMinutes >= nowMinutes) {
+          currentWeekDates.push(dKey);
+        }
+        // If startMinutes < nowMinutes: passed today → fallback below handles tomorrow
       }
-      // If startMinutes < nowMinutes: passed today, so do NOT schedule for today in the past!
+      // If dKey < currentDayKey: past day for single task → skip
     }
-    // If dKey < currentDayKey: passed in current week, do NOT schedule in the past!
 
-    // 2. Next week evaluation
+    // 2. Next week evaluation (always uses the 7-day offset from the selected day)
     if (includeNextWeek) {
       const [y, m, d] = dKey.split("-").map(Number);
       const nextDate = new Date(y, m - 1, d + 7);
@@ -149,9 +166,8 @@ export function getValidScheduleDates(
     }
   }
 
-  // If user only selected today (or no days) and today's slot has already passed:
-  // "if we are in the day but we pass the hours we start from tomorow or next day"
-  if (selectedDateKeys.length <= 1 && currentWeekDates.length === 0) {
+  // One-off only: if the single selected day's slot has already passed, fallback to tomorrow
+  if (!isRecurring && currentWeekDates.length === 0) {
     const tomorrow = new Date(now);
     tomorrow.setDate(now.getDate() + 1);
     const tomorrowKey = formatLocalDate(tomorrow);
@@ -161,6 +177,7 @@ export function getValidScheduleDates(
   const allDates = [...currentWeekDates, ...nextWeekDates];
   return { currentWeekDates, nextWeekDates, allDates };
 }
+
 
 /**
  * Validates whether a task of given duration can be scheduled starting at startHour on dateKey.

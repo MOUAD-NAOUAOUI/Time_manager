@@ -1,12 +1,16 @@
 package com.intelligenttime.corebackend.service;
 
 import com.intelligenttime.corebackend.dto.*;
+import com.intelligenttime.corebackend.exception.ServiceUnavailableException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -16,8 +20,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Client for the AI microservice. RestTemplate is configured with connection
+ * and read timeouts to prevent cascading failures when the AI service is slow
+ * or unavailable.
+ */
 @Service
 public class AIClientService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AIClientService.class);
 
     private final String aiServiceUrl;
     private final RestTemplate restTemplate;
@@ -28,6 +39,8 @@ public class AIClientService {
     public AIClientService(
             @Value("${ai.service.url:http://127.0.0.1:8000}") String aiServiceUrl,
             @Value("${ai.service.internal-token}") String internalToken,
+            @Value("${ai.service.connect-timeout:5000}") int connectTimeoutMs,
+            @Value("${ai.service.read-timeout:30000}") int readTimeoutMs,
             TaskService taskService) {
         if (internalToken == null || internalToken.isBlank()) {
             throw new IllegalStateException("AI_SERVICE_INTERNAL_TOKEN must be set");
@@ -35,7 +48,15 @@ public class AIClientService {
         this.aiServiceUrl = aiServiceUrl;
         this.internalToken = internalToken;
         this.taskService = taskService;
-        this.restTemplate = new RestTemplate();
+
+        // Configure RestTemplate with timeouts to prevent hanging requests
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connectTimeoutMs);
+        factory.setReadTimeout(readTimeoutMs);
+        this.restTemplate = new RestTemplate(factory);
+
+        LOGGER.info("AIClientService initialized: url={}, connectTimeout={}ms, readTimeout={}ms",
+                aiServiceUrl, connectTimeoutMs, readTimeoutMs);
     }
 
     public DecomposeGoalResponse decomposeGoal(String userEmail, String goal, Integer targetHours) {
@@ -57,6 +78,8 @@ public class AIClientService {
                     endpoint, requestEntity, DecomposeGoalResponse.class);
             return response.getBody();
         } catch (Exception e) {
+            LOGGER.error("AI service call failed for decomposeGoal: endpoint={}, error={}",
+                    endpoint, e.getMessage(), e);
             List<DecomposedSubTaskResponse> fallbackTasks = List.of(
                     new DecomposedSubTaskResponse("Planning & Research: " + goal, 45, "high", "#A0785A"),
                     new DecomposedSubTaskResponse("Execution: " + goal, 90, "high", "#2563EB"),
@@ -95,6 +118,8 @@ public class AIClientService {
         payload.put("start_hour", request.getStartHour());
         payload.put("end_hour", request.getEndHour());
         payload.put("timezone", request.getTimezone() != null ? request.getTimezone() : "UTC");
+        payload.put("sleep_start", request.getSleepStart());
+        payload.put("sleep_end", request.getSleepEnd());
         if (request.getDate() != null) {
             payload.put("date", request.getDate());
         }
@@ -120,19 +145,10 @@ public class AIClientService {
                     endpoint, requestEntity, ScheduleResponse.class);
             return response.getBody();
         } catch (Exception e) {
-            ScheduleMetrics fallbackMetrics = new ScheduleMetrics();
-            fallbackMetrics.setTotalTasks(request.getTasks().size());
-            fallbackMetrics.setScheduledTasks(0);
-            fallbackMetrics.setUnscheduledTasks(request.getTasks().size());
-            fallbackMetrics.setOverloadWarning(false);
-            fallbackMetrics.setDeadlineConflicts(new ArrayList<>());
-
-            ScheduleResponse fallback = new ScheduleResponse();
-            fallback.setUserEmail(request.getUserEmail());
-            fallback.setSchedule(new ArrayList<>());
-            fallback.setMetrics(fallbackMetrics);
-            fallback.setRecommendation("AI scheduling service is temporarily offline. Please try again shortly.");
-            return fallback;
+            LOGGER.error("AI service call failed for generateSchedule: endpoint={}, userEmail={}, error={}",
+                    endpoint, request.getUserEmail(), e.getMessage(), e);
+                throw new ServiceUnavailableException(
+                    "AI scheduling service is temporarily offline. Please try again shortly.");
         }
     }
 
@@ -175,6 +191,8 @@ public class AIClientService {
                     endpoint, requestEntity, ChatProcessResponse.class);
             return response.getBody();
         } catch (Exception e) {
+            LOGGER.error("AI service call failed for processChatMessage: endpoint={}, userEmail={}, error={}",
+                    endpoint, userEmail, e.getMessage(), e);
             ChatProcessResponse fallback = new ChatProcessResponse();
             fallback.setUserEmail(userEmail);
             fallback.setMessage(message);
